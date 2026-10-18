@@ -60,7 +60,7 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 | Module | Add in TizenBrew as | Opens |
 |---|---|---|
 | Prime Video (Ad Skip) | `jatin82/skipstreams@main` | primevideo.com |
-| JioHotstar | `jatin82/skipstreams@main/hotstar` | hotstar.com/in (shows the login if you aren't logged in) |
+| JioHotstar | `jatin82/skipstreams@main/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
 
 1. **Install TizenBrew on the TV** following the
    [TizenBrew guide](https://github.com/reisxd/TizenBrew/blob/main/docs/README.md). With a Samsung

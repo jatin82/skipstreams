@@ -21,11 +21,23 @@ const APPS = {
 	hotstar: 'HotstarT01.JioHotstar',
 };
 const APP_NAME = process.argv[2] && APPS[process.argv[2]] ? process.argv[2] : 'prime';
-const TARGET_URL = process.argv.slice(2).find((a) => /^https?:\/\//i.test(a)) || '';
+const TARGET_URL = resolveTarget(process.argv.slice(2).filter((a) => !APPS[a])[0] || '');
 const APP_ID = process.env.APP_ID || APPS[APP_NAME];
 const SDB = process.env.SDB || 'sdb';
 const USER_SCRIPT_PATH = path.join(__dirname, '..', 'userScript.js');
 const SDB_PORT = 26101;
+
+// Hotstar shorthand: "<moviename>/<number>" -> https://www.hotstar.com/in/movies/<moviename>/<number>/watch
+function resolveTarget(arg) {
+	if (!arg || /^https?:\/\//i.test(arg)) return arg;
+	const m = APP_NAME === 'hotstar' && /^\/?([^/\s]+)\/(\d+)\/?$/.exec(arg);
+	if (!m) {
+		console.error('Unrecognised URL "' + arg + '". Use a full https:// URL' +
+			(APP_NAME === 'hotstar' ? ' or <moviename>/<number>.' : '.'));
+		process.exit(1);
+	}
+	return 'https://www.hotstar.com/in/movies/' + m[1] + '/' + m[2] + '/watch';
+}
 
 function log() {
 	const args = Array.prototype.slice.call(arguments);
@@ -103,10 +115,12 @@ async function main() {
 	await client.Runtime.enable();
 	if (client.Runtime.runIfWaitingForDebugger) await client.Runtime.runIfWaitingForDebugger().catch(() => {});
 
-	// Tell the launcher page the companion is attached; it then opens the site.
-	// Hotstar opens its home page first so the script can check the login before going to TARGET_URL.
+	// Tell the launcher page the companion is attached; it then opens TARGET_URL (or the site's home page).
+	// If Hotstar isn't logged in, the script sends it to the login page and returns to TARGET_URL afterwards.
+	const startArgs = 'true, ' + JSON.stringify(TARGET_URL || undefined);
 	await client.Runtime.evaluate({
-		expression: 'window.primeTizenStart ? (window.primeTizenStart(true), "ok") : (window.__primeTizenCompanion = true, "flag")',
+		expression: 'window.primeTizenStart ? (window.primeTizenStart(' + startArgs + '), "ok") : ' +
+			'(window.__primeTizenCompanion = true, window.__primeTizenUrl = ' + JSON.stringify(TARGET_URL) + ', "flag")',
 	});
 	log('Opening', APP_NAME, TARGET_URL ? '-> ' + TARGET_URL : '', 'on TV. Keep this running while watching (Ctrl+C to stop).');
 

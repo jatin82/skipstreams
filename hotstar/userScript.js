@@ -1238,6 +1238,8 @@
 		var SEEN_KEY = 'ptHotstarTargetSeen';
 		var LOGIN_URL = 'https://www.hotstar.com/in/mypage#mp-login';
 		var LOGIN_FLOW_KEY = 'ptHotstarLoginFlow';
+		var PROFILE_NAME = 'Jatin';
+		var profileClickedAt = 0;
 		var notice = null;
 		var loginOpenedAt = 0;
 
@@ -1312,6 +1314,178 @@
 			}
 		}
 
+		function onProfilePage() {
+			return /\/onboarding\/profile/.test(location.pathname);
+		}
+
+		// No artwork anywhere except the login page (its QR code is an image).
+		function keepImages() {
+			return /\/mypage/.test(location.pathname);
+		}
+
+		function stripImages(root) {
+			if (!root || root.nodeType !== 1 || keepImages()) return;
+			var imgs = root.tagName === 'IMG' || root.tagName === 'SOURCE' ? [root] : root.querySelectorAll('img, source');
+			for (var i = 0; i < imgs.length; i++) {
+				var img = imgs[i];
+				if (img.closest('[role="dialog"]')) continue;
+				if (img.hasAttribute('srcset')) img.removeAttribute('srcset');
+				if (img.hasAttribute('src') && !/^data:/.test(img.getAttribute('src'))) img.removeAttribute('src');
+			}
+		}
+
+		function blockImages() {
+			var style = document.createElement('style');
+			style.id = 'prime-tizen-no-images';
+			style.textContent =
+				'html.pt-no-images img:not([role="dialog"] img),html.pt-no-images picture:not([role="dialog"] picture)' +
+				'{visibility:hidden!important;}' +
+				'html.pt-no-images body *:not([role="dialog"] *),html.pt-no-images body *::before,' +
+				'html.pt-no-images body *::after{background-image:none!important;}';
+			(document.head || document.documentElement).appendChild(style);
+			var sync = function () {
+				document.documentElement.classList.toggle('pt-no-images', !keepImages());
+			};
+			sync();
+			new MutationObserver(function (records) {
+				sync();
+				for (var i = 0; i < records.length; i++) {
+					var r = records[i];
+					if (r.type === 'attributes') stripImages(r.target);
+					else for (var j = 0; j < r.addedNodes.length; j++) stripImages(r.addedNodes[j]);
+				}
+			}).observe(document.documentElement, {
+				childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset'],
+			});
+			onReady(function () { stripImages(document.body); });
+		}
+
+		function selectProfile() {
+			var now = Date.now();
+			if (now - profileClickedAt < 3000) return;
+			var names = document.querySelectorAll('[data-testid="profile-wrapper-id"] p');
+			for (var i = 0; i < names.length; i++) {
+				if (names[i].textContent.trim().toLowerCase() !== PROFILE_NAME.toLowerCase()) continue;
+				var tile = names[i].closest('[role="button"]');
+				if (!tile) continue;
+				profileClickedAt = now;
+				log('Selecting profile', PROFILE_NAME);
+				tile.click();
+				return;
+			}
+		}
+
+		// Hotstar plays ads inside the movie's own <video>, so speed it up while the ad overlay is shown.
+		var AD_RATE = 16;
+		var MAX_AD_SECONDS = 180;
+		var adSeekAt = 0;
+		var adActive = false;
+		var adLastSeen = 0;
+
+		function adShowing() {
+			if (!/\/watch\b/.test(location.pathname)) return false;
+			var leaves = document.querySelectorAll('span, p, div');
+			for (var i = 0; i < leaves.length; i++) {
+				var el = leaves[i];
+				if (el.children.length) continue;
+				var t = el.textContent.trim();
+				if ((t === 'Ad' || /^go ads free$/i.test(t)) && isVisible(el)) return true;
+			}
+			return false;
+		}
+
+		function setRate(video, rate) {
+			// Some players reject very high rates; fall back to the fastest accepted one.
+			var rates = rate > 1 ? [rate, 8, 4, 2] : [1];
+			for (var i = 0; i < rates.length; i++) {
+				try {
+					video.playbackRate = rates[i];
+					if (video.playbackRate === rates[i]) return rates[i];
+				} catch (e) { /* try a lower rate */ }
+			}
+			return video.playbackRate;
+		}
+
+		function fastForwardAds() {
+			var video = getMainVideo();
+			if (!video) return;
+			var now = Date.now();
+			if (adShowing()) adLastSeen = now;
+			// The overlay can flicker between ads; wait a moment before treating the break as over.
+			var inAd = now - adLastSeen < 1200;
+			if (inAd) {
+				if (!adActive) {
+					adActive = true;
+					log('Ad detected (' + Math.round(video.currentTime) + '/' + Math.round(video.duration) + 's), skipping');
+				}
+				// Ads are short clips loaded into the same <video>; jump to the clip's end to finish it.
+				var d = video.duration;
+				if (isFinite(d) && d > 0 && d < MAX_AD_SECONDS && video.currentTime < d - 0.5 && now - adSeekAt > 800) {
+					adSeekAt = now;
+					try { video.currentTime = d - 0.1; } catch (e) { /* fall back to fast playback */ }
+				}
+				if (video.playbackRate !== AD_RATE) setRate(video, AD_RATE);
+				if (video.paused) video.play().catch(function () {});
+			} else if (adActive) {
+				adActive = false;
+				setRate(video, 1);
+				log('Ad finished, back to 1x');
+			}
+		}
+
+		// Pick the highest quality in the player's Quality menu (Hotstar remembers it per profile).
+		var QUALITY_SKIP_RE = /^(auto|data saver)$/i;
+		var qualityStep = 0;
+		var qualityAt = 0;
+		var qualityDoneFor = '';
+
+		function qualityAction() {
+			var labels = document.querySelectorAll('.player-menu-label p');
+			for (var i = 0; i < labels.length; i++) {
+				if (/^quality$/i.test(labels[i].textContent.trim())) return labels[i].closest('[data-testid="action"]');
+			}
+			return null;
+		}
+
+		function ensureBestQuality() {
+			var video = getMainVideo();
+			// Only for the movie itself, not ad clips.
+			if (!video || adActive || !(video.duration > MAX_AD_SECONDS)) return;
+			var page = location.pathname;
+			if (qualityDoneFor === page) return;
+			var now = Date.now();
+			if (now - qualityAt < 700) return;
+			qualityAt = now;
+			var action = qualityAction();
+			if (!action) return;
+			if (qualityStep === 0) {
+				action.click();
+				qualityStep = 1;
+				return;
+			}
+			qualityStep = 0;
+			var options = document.querySelectorAll('[data-testid="player-menu"] button, button');
+			var best = null;
+			for (var i = 0; i < options.length; i++) {
+				var b = options[i];
+				if (b.getAttribute('data-testid') === 'player-menu') continue;
+				var name = b.textContent.trim();
+				if (!name || QUALITY_SKIP_RE.test(name) || name.length > 20) continue;
+				var sub = b.parentElement && b.parentElement.textContent || '';
+				// Options are listed best-first (Full HD "Up to 1080p", HD "Up to 720p", ...).
+				if (/up to \d{3,4}p|4k|ultra|full hd|^hd$/i.test(name + ' ' + sub)) { best = b; break; }
+			}
+			qualityDoneFor = page;
+			if (!best) return;
+			var current = action.textContent.replace(/^\s*quality/i, '').trim();
+			if (current === best.textContent.trim()) {
+				action.click(); // close the menu again
+				return;
+			}
+			log('Setting quality to', best.textContent.trim());
+			best.click();
+		}
+
 		function check() {
 			var state = loginState();
 			if (!state) return;
@@ -1321,6 +1495,10 @@
 				return;
 			}
 			hideNotice();
+			if (onProfilePage()) {
+				selectProfile();
+				return;
+			}
 			goToTarget();
 		}
 
@@ -1331,9 +1509,12 @@
 					sessionStorage.setItem(SEEN_KEY, '1');
 					sessionStorage.setItem(TARGET_KEY, window.__ptTargetUrl);
 				}
+				blockImages();
 				onReady(function () {
 					check();
 					setInterval(check, 1000);
+					setInterval(fastForwardAds, 250);
+					setInterval(ensureBestQuality, 1000);
 				});
 			},
 		};

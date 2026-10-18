@@ -50,6 +50,22 @@ When you exit the app on the TV, the companion stops too.
 If you open the app from the TV's app list without the companion, it shows "Waiting for PC companion…".
 Press **OK** to open Prime Video without ad skipping and without the cursor, or **BACK** to exit.
 
+## JioHotstar
+
+```powershell
+npm run install-hotstar                              # one time
+node companion.js hotstar superman/1271509950        # = https://www.hotstar.com/in/movies/superman/1271509950/watch
+node companion.js hotstar https://www.hotstar.com/in/...   # any full URL also works
+```
+
+- Opens the given URL directly. If you aren't logged in, it opens
+  `https://www.hotstar.com/in/mypage#mp-login` first and returns to the URL after you log in.
+- Picks the **Jatin** profile on the "Who's watching?" page (`PROFILE_NAME` in `userScript.js`).
+- No animations and no images (artwork, posters, backgrounds); the login QR code is kept.
+- Skips ads: each ad is a short clip in the player, so the script jumps to its end (16x playback if
+  the jump doesn't work). The movie's sound is never muted.
+- Selects the highest quality in the player's Quality menu (Full HD); Hotstar remembers it per profile.
+
 Remote (with the companion): arrows move the cursor, OK clicks, Back exits the app (the companion closes it over sdb), media keys control playback, while watching (cursor hidden) Left/Right seek ±10 s (hold for ±5 min) and OK
 plays/pauses, Red (A) toggles the cursor, and Green (B) switches between the
 "Continue watching only" home page (default) and the full page.

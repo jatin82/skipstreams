@@ -48,7 +48,7 @@
 
 	// Called by the PC companion (companion.js) once the debugger is attached.
 	window.primeTizenStart = openPrime;
-	if (window.__primeTizenCompanion) return openPrime(true);
+	if (window.__primeTizenCompanion) return openPrime(true, window.__primeTizenUrl);
 
 	statusEl.textContent = 'Waiting for PC companion…';
 	hintEl.textContent = 'The remote cursor and extras need the PC companion running (it launches this app). ' +
