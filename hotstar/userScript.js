@@ -1239,6 +1239,8 @@
 		var LOGIN_URL = 'https://www.hotstar.com/in/mypage#mp-login';
 		var LOGIN_FLOW_KEY = 'ptHotstarLoginFlow';
 		var PROFILE_NAME = 'Jatin';
+		var TARGET_TRIES_KEY = 'ptHotstarTargetTries';
+		var targetOpenedAt = 0;
 		var profileClickedAt = 0;
 		var notice = null;
 		var loginOpenedAt = 0;
@@ -1307,11 +1309,26 @@
 			if (!target && sessionStorage.getItem(LOGIN_FLOW_KEY)) target = 'https://www.hotstar.com/in';
 			sessionStorage.removeItem(LOGIN_FLOW_KEY);
 			if (!target) return;
-			sessionStorage.removeItem(TARGET_KEY);
-			if (location.href.split('#')[0] !== target) {
-				log('Opening', target);
-				location.href = target;
+			var here = location.href.split('#')[0].replace(/\/$/, '');
+			if (here === target.split('#')[0].replace(/\/$/, '')) {
+				sessionStorage.removeItem(TARGET_KEY);
+				sessionStorage.removeItem(TARGET_TRIES_KEY);
+				return;
 			}
+			// Hotstar can redirect to /in/home or the profile picker first; keep the target until we land on it.
+			var tries = +sessionStorage.getItem(TARGET_TRIES_KEY) || 0;
+			if (tries >= 4) {
+				sessionStorage.removeItem(TARGET_KEY);
+				sessionStorage.removeItem(TARGET_TRIES_KEY);
+				log('Gave up opening', target);
+				return;
+			}
+			var now = Date.now();
+			if (now - targetOpenedAt < 5000) return;
+			targetOpenedAt = now;
+			sessionStorage.setItem(TARGET_TRIES_KEY, String(tries + 1));
+			log('Opening', target);
+			location.href = target;
 		}
 
 		function onProfilePage() {
@@ -1486,6 +1503,23 @@
 			best.click();
 		}
 
+		// Hotstar starts muted when it can't autoplay with sound (e.g. fresh install); unmute once per movie.
+		var unmutedFor = '';
+
+		function ensureSound() {
+			var video = getMainVideo();
+			if (!video || adActive || video.paused || !(video.duration > MAX_AD_SECONDS)) return;
+			var page = location.pathname;
+			if (unmutedFor === page) return;
+			var btn = document.querySelector('button[data-testid="volume"]');
+			if (!btn) return;
+			unmutedFor = page;
+			if (/^unmute$/i.test(btn.getAttribute('aria-label') || '')) {
+				log('Unmuting');
+				btn.click();
+			}
+		}
+
 		function check() {
 			var state = loginState();
 			if (!state) return;
@@ -1515,6 +1549,7 @@
 					setInterval(check, 1000);
 					setInterval(fastForwardAds, 250);
 					setInterval(ensureBestQuality, 1000);
+					setInterval(ensureSound, 1000);
 				});
 			},
 		};

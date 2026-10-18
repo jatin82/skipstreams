@@ -63,7 +63,7 @@ node companion.js hotstar https://www.hotstar.com/in/...   # any full URL also w
 - Picks the **Jatin** profile on the "Who's watching?" page (`PROFILE_NAME` in `userScript.js`).
 - No animations and no images (artwork, posters, backgrounds); the login QR code is kept.
 - Skips ads: each ad is a short clip in the player, so the script jumps to its end (16x playback if
-  the jump doesn't work). The movie's sound is never muted.
+  the jump doesn't work). The movie's sound is never muted; if Hotstar starts muted (it does after a fresh install), the script presses Unmute.
 - Selects the highest quality in the player's Quality menu (Full HD); Hotstar remembers it per profile.
 
 Remote (with the companion): arrows move the cursor, OK clicks, Back exits the app (the companion closes it over sdb), media keys control playback, while watching (cursor hidden) Left/Right seek ±10 s (hold for ±5 min) and OK
