@@ -54,10 +54,14 @@ Press **OK** to open Prime Video without ad skipping and without the cursor, or 
 
 ```powershell
 npm run install-hotstar                              # one time
+npm run hotstar                                      # asks for the movie name and number
 node companion.js hotstar superman/1271509950        # = https://www.hotstar.com/in/movies/superman/1271509950/watch
 node companion.js hotstar https://www.hotstar.com/in/...   # any full URL also works
 ```
 
+- Without a movie, it asks in the terminal for the movie name (spaces become dashes) and number, and
+  opens `https://www.hotstar.com/in/movies/<movie_name>/<movie_number>/watch`. Press Enter at the
+  name prompt to open the home page instead.
 - Opens the given URL directly. If you aren't logged in, it opens
   `https://www.hotstar.com/in/mypage#mp-login` first and returns to the URL after you log in.
 - Picks the **Jatin** profile on the "Who's watching?" page (`PROFILE_NAME` in `userScript.js`).
