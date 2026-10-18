@@ -6,7 +6,6 @@
   "packageType": "mods",
   "websiteURL": "https://www.primevideo.com/",
   "main": "userScript.js",
-  "evaluateScriptOnDocumentStart": true,
   "keys": [
     "MediaPlayPause",
     "MediaPlay",
