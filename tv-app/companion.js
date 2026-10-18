@@ -1,0 +1,122 @@
+'use strict';
+
+/*
+ * PC companion: launches a TV app in debug mode over sdb and injects ../userScript.js
+ * into the website through the Chrome DevTools Protocol. Keep it running while watching.
+ *
+ *   npm run watch                              Prime Video
+ *   node companion.js hotstar [url]            JioHotstar, optionally opening a page (logs in first if needed)
+ *   TV_IP=192.168.29.51 npm run watch
+ *
+ * Env: TV_IP, SDB (path to sdb), APP_ID (overrides the app id)
+ */
+
+const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
+const CDP = require('chrome-remote-interface');
+
+const APPS = {
+	prime: 'PrimeTzn01.PrimeTizen',
+	hotstar: 'HotstarT01.JioHotstar',
+};
+const APP_NAME = process.argv[2] && APPS[process.argv[2]] ? process.argv[2] : 'prime';
+const TARGET_URL = process.argv.slice(2).find((a) => /^https?:\/\//i.test(a)) || '';
+const APP_ID = process.env.APP_ID || APPS[APP_NAME];
+const SDB = process.env.SDB || 'sdb';
+const USER_SCRIPT_PATH = path.join(__dirname, '..', 'userScript.js');
+const SDB_PORT = 26101;
+
+function log() {
+	const args = Array.prototype.slice.call(arguments);
+	console.log.apply(console, ['[' + new Date().toLocaleTimeString() + ']'].concat(args));
+}
+
+function sdb(args, opts) {
+	return execFileSync(SDB, args, Object.assign({ encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }, opts));
+}
+
+function sdbOn(serial, args, opts) {
+	return sdb(['-s', serial].concat(args), opts);
+}
+
+function resolveSerial() {
+	if (process.env.TV_IP) {
+		const serial = process.env.TV_IP.indexOf(':') === -1 ? process.env.TV_IP + ':' + SDB_PORT : process.env.TV_IP;
+		log('Connecting to', serial);
+		log(sdb(['connect', serial]).trim());
+		return serial;
+	}
+	const line = sdb(['devices']).split(/\r?\n/).find((l) => /\tdevice\b|\s+device\s+/.test(l));
+	if (!line) throw new Error('No TV connected. Run `sdb connect <TV-IP>` or set TV_IP.');
+	return line.trim().split(/\s+/)[0];
+}
+
+function launchInDebug(serial) {
+	try { sdbOn(serial, ['shell', '0', 'was_kill', APP_ID]); } catch (e) { /* not running */ }
+	const out = sdbOn(serial, ['shell', '0', 'debug', APP_ID], { timeout: 60000 });
+	const match = /port:\s*(\d+)/.exec(out);
+	if (!match) throw new Error('Debug launch failed:\n' + out);
+	return Number(match[1]);
+}
+
+function shouldInject(context) {
+	const aux = context.auxData || {};
+	if (aux.isDefault === false) return false;
+	return /^https?:\/\//i.test(context.origin || '');
+}
+
+async function main() {
+	const serial = resolveSerial();
+	log('TV:', serial);
+
+	const port = launchInDebug(serial);
+	log('App launched in debug mode, port', port);
+	sdbOn(serial, ['forward', 'tcp:' + port, 'tcp:' + port]);
+
+	const client = await CDP({ host: '127.0.0.1', port, local: true });
+	log('Debugger attached');
+
+	client.on('Runtime.executionContextCreated', ({ context }) => {
+		if (!shouldInject(context)) return;
+		// Re-read every time so script edits apply without reinstalling the app.
+		const script = 'window.__ptTargetUrl = ' + JSON.stringify(TARGET_URL) + ';\n' +
+			fs.readFileSync(USER_SCRIPT_PATH, 'utf8');
+		client.Runtime.evaluate({ expression: script, contextId: context.id })
+			.then(() => log('Injected script into', context.origin))
+			.catch((e) => log('Inject failed:', e.message));
+	});
+
+	client.on('Runtime.consoleAPICalled', ({ args }) => {
+		const text = args.map((a) => (a.value !== undefined ? a.value : a.description)).join(' ');
+		if (text.indexOf('[PrimeTizen]') !== -1 || text.indexOf('[PrimeAdsSkip]') !== -1) log('TV:', text);
+		if (text.indexOf('[PrimeTizen] Exit requested') !== -1 && !closed) {
+			// Back on the remote: the page can't exit the app itself, so close it from here.
+			log('Closing app on TV');
+			try { sdbOn(serial, ['shell', '0', 'was_kill', APP_ID]); } catch (e) { /* already closed */ }
+		}
+	});
+
+	let closed = false;
+	const done = new Promise((resolve) => client.on('disconnect', () => { closed = true; resolve(); }));
+
+	await client.Runtime.enable();
+	if (client.Runtime.runIfWaitingForDebugger) await client.Runtime.runIfWaitingForDebugger().catch(() => {});
+
+	// Tell the launcher page the companion is attached; it then opens the site.
+	// Hotstar opens its home page first so the script can check the login before going to TARGET_URL.
+	await client.Runtime.evaluate({
+		expression: 'window.primeTizenStart ? (window.primeTizenStart(true), "ok") : (window.__primeTizenCompanion = true, "flag")',
+	});
+	log('Opening', APP_NAME, TARGET_URL ? '-> ' + TARGET_URL : '', 'on TV. Keep this running while watching (Ctrl+C to stop).');
+
+	process.on('SIGINT', () => { client.close().finally(() => process.exit(0)); });
+	await done;
+	log('App closed on TV.');
+	try { sdbOn(serial, ['forward', '--remove', 'tcp:' + port]); } catch (e) { /* ignore */ }
+}
+
+main().catch((e) => {
+	console.error('Error:', e.message);
+	process.exit(1);
+});

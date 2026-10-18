@@ -1,0 +1,6 @@
+node_modules/
+tv-app/dist/
+tv-app/widget*/author-signature.xml
+tv-app/widget*/signature1.xml
+tv-app/widget*/.manifest.tmp
+*.tgz

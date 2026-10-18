@@ -1,0 +1,83 @@
+# Prime Video (Ad Skip) for Samsung Tizen TVs
+
+A [TizenBrew](https://github.com/reisxd/TizenBrew) site-modification module that opens
+`https://www.primevideo.com/` on a Samsung Tizen TV (tested target: Tizen 9) and injects
+[userScript.js](./userScript.js), which:
+
+- **Skips ads**: clicks visible "Skip Ad" controls, and plays unskippable ads muted at up
+  to 16× (falls back to 8×/4×/2× if the TV decoder refuses), then restores speed/volume.
+  Logic is ported from the `primeAdsSkip.js` Tampermonkey script.
+- **Remote cursor**: the desktop site isn't remote-friendly, so a pointer is added.
+- **TV-friendly page**: all CSS/Web animations are disabled and trailers (hero banners,
+  hover previews, detail pages) never autoplay; only the real player video plays.
+
+| Remote key | Action |
+|---|---|
+| Arrows | Move cursor (hold to accelerate; pushing against an edge scrolls) |
+| OK / Enter | Click under cursor (focuses text fields to open the TV keyboard) |
+| Back | Close the on-screen keyboard if typing, otherwise exit the app |
+| Play/Pause, Play, Pause, Stop | Control the video |
+| Left / Right (while watching, cursor hidden) | Tap: seek −10 s / +10 s. Hold: jump −5 / +5 min, repeating while held (disabled during ads) |
+| OK (while watching, cursor hidden) | Play / pause |
+| Up / Down (while watching) | Bring back the cursor |
+| FF / Rewind | Seek ±10 s (disabled while an ad is playing) |
+| Red (A) | Toggle the cursor on/off |
+| Green (B) | Toggle "watch-only" home (only Continue watching) / full home page |
+
+The cursor hides after 4 s of inactivity. The first arrow press after that only brings it back without moving it.
+Hover effects are only triggered once the cursor stops (Prime's hover handlers are slow on TV hardware).
+
+Browsing Prime's home/catalogue pages is heavy on TV hardware (large pages with many images), so the app is
+intended for watching: pick titles on a phone or PC, then use the TV for playback. By default the home, Movies
+and TV shows pages show **only the "Continue watching" row**; the hero trailer, every other row, the footer and
+infinite-scroll loading are removed (their lazy images never load). Press **Green** to show the full page.
+Opening a Continue-watching tile automatically presses the title's Play/Resume ("Watch now") button, so
+playback resumes where you left off. Tiles from other rows just open the detail page.
+When the app starts, it automatically resumes the **most recent** Continue-watching title after a 3-second
+"Resuming…" countdown (once per launch). Press any remote key during the countdown to stay on the home page.
+In watch-only mode, title/detail pages are also stripped down: no images, posters or trailers, and no animations.
+
+## Why TizenBrew?
+
+A normal Tizen `.wgt` app can't inject scripts into a third-party website. When the app goes to an
+external URL, the app's own JavaScript stops running, and Prime Video can't be read across origins
+from an iframe. TizenBrew opens the site in debug mode and injects the module's script through the
+DevTools protocol, the same way TizenTube works for YouTube.
+
+## Install
+
+There are two ways to install it:
+
+- **Option A: Samsung app (`.wgt`) + PC companion**. See [tv-app/README.md](./tv-app/README.md).
+  It installs as its own "Prime Video AdSkip" app, and Developer Mode keeps your real PC IP as Host PC IP.
+  Ad skipping needs `npm run watch` running on the PC.
+- **Option B: TizenBrew module**. Follow the steps below.
+
+### TizenBrew module
+
+1. **Install TizenBrew on the TV** by following the
+   [TizenBrew guide](https://github.com/reisxd/TizenBrew/blob/main/docs/README.md)
+   (enable Developer Mode on the TV, then install the TizenBrew `.wgt`).
+2. **Publish this module** using one of these options:
+   - GitHub: push this folder to a public repo, for example `github.com/<you>/prime-tizen`.
+   - npm: `npm publish`. Rename `name` in `package.json` first if it's already taken.
+3. On the TV, open **TizenBrew → Module Manager → Add module** and enter one of:
+   - `gh/<you>/prime-tizen` for GitHub
+   - `prime-tizen` for npm
+4. Launch **Prime Video (Ad Skip)** from TizenBrew and sign in.
+
+## Development
+
+- `npm run check` checks the script syntax.
+- Debug on the TV by connecting Chrome DevTools to TizenBrew's debug port and filtering the
+  console by `[PrimeTizen]`.
+- To test in a desktop browser, paste `userScript.js` into the DevTools console on primevideo.com.
+  The arrow keys and Enter will then control the cursor.
+
+## Known limitations
+
+- Prime Video may show "unsupported browser" or reject DRM on some TV models/firmware. That depends
+  on the TV's web engine and isn't something this script can change.
+- Ad detection relies on Prime's current web player DOM (`#dv-web-player`, `aria-label="Ad playing."`,
+  `.atvwebplayersdk-ad-timer-remaining-time`). If Amazon changes it, update the selectors at the top
+  of `AdSkipper` in `userScript.js`.

@@ -1,0 +1,28 @@
+{
+  "name": "primevideo-tizenbrew",
+  "appName": "Prime Video (Ad Skip)",
+  "version": "1.0.0",
+  "description": "TizenBrew site-modification module: Prime Video on Samsung Tizen TVs with ad skipping, a remote cursor, watch-only home, auto-resume and remote seeking.",
+  "packageType": "mods",
+  "websiteURL": "https://www.primevideo.com/",
+  "main": "userScript.js",
+  "evaluateScriptOnDocumentStart": true,
+  "keys": [
+    "MediaPlayPause",
+    "MediaPlay",
+    "MediaPause",
+    "MediaStop",
+    "MediaFastForward",
+    "MediaRewind",
+    "ColorF0Red",
+    "ColorF1Green"
+  ],
+  "files": [
+    "userScript.js"
+  ],
+  "keywords": ["tizenbrew", "tizen", "samsung", "primevideo"],
+  "scripts": {
+    "check": "node --check userScript.js"
+  },
+  "license": "MIT"
+}

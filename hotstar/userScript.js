@@ -1,0 +1,1350 @@
+/*
+ * Prime Video for Samsung Tizen TVs (TizenBrew site-modification module).
+ *
+ * - Clicks "Skip ad" controls and fast-forwards (muted) unskippable ads.
+ * - Remote-controlled virtual cursor: arrows move, OK clicks, edges scroll.
+ * - Disables page animations and trailer autoplay to keep the TV responsive.
+ * - Back key navigates back / closes player, media keys control playback.
+ *
+ * Ad logic ported from the "Prime Video Ads Auto-Skip" Tampermonkey script.
+ */
+(function () {
+	'use strict';
+
+	if (window.__primeTizenLoaded || window.top !== window) return;
+	window.__primeTizenLoaded = true;
+
+	function log() {
+		var args = Array.prototype.slice.call(arguments);
+		args.unshift('[PrimeTizen]');
+		console.log.apply(console, args);
+	}
+
+	// The same script runs in the Prime Video and JioHotstar apps; Prime-only features are gated on this.
+	var IS_PRIME = !/(^|\.)hotstar\.com$/i.test(location.hostname);
+
+	function onReady(fn) {
+		if (document.body) fn();
+		else document.addEventListener('DOMContentLoaded', fn, { once: true });
+	}
+
+	function normalizeLabel(value) {
+		return String(value || '').replace(/\s+/g, ' ').trim();
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* No animations (the TV GPU/CPU can't keep up with Prime's effects)  */
+	/* ------------------------------------------------------------------ */
+
+	function disableAnimations() {
+		var style = document.createElement('style');
+		style.id = 'prime-tizen-no-anim';
+		style.textContent =
+			'*,*::before,*::after{animation:none!important;transition:none!important;' +
+			'scroll-behavior:auto!important;}';
+		(document.head || document.documentElement).appendChild(style);
+
+		// Web Animations API (element.animate) bypasses CSS; make those finish instantly.
+		var nativeAnimate = Element.prototype.animate;
+		if (nativeAnimate) {
+			Element.prototype.animate = function (keyframes, options) {
+				var opts = typeof options === 'object' && options ? Object.assign({}, options) : {};
+				opts.duration = 0;
+				opts.delay = 0;
+				opts.endDelay = 0;
+				return nativeAnimate.call(this, keyframes, opts);
+			};
+		}
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* Watch-only home: keep just the "Continue watching" row             */
+	/* ------------------------------------------------------------------ */
+
+	var WatchOnly = (function () {
+		var LANDING = 'main[data-testid="landingpage"]';
+		var PLAYER = '#dv-web-player';
+		var CONTINUE_RE = /continue watching|resume watching/i;
+		var enabled = true;
+		var markQueued = false;
+		var notice = null;
+
+		function injectStyle() {
+			var style = document.createElement('style');
+			style.id = 'prime-tizen-watch-only';
+			// display:none keeps hidden rows from painting, lazy-loading images, or paginating more rows.
+			style.textContent =
+				'html.pt-watch-only ' + LANDING + ' [data-testid="top-hero"],' +
+				'html.pt-watch-only ' + LANDING + ' [data-testid="navigation-carousel-wrapper"]:not(.pt-keep),' +
+				'html.pt-watch-only ' + LANDING + ' [data-testid="page-pagination-marker"],' +
+				'html.pt-watch-only ' + LANDING + ' .pt-hide,' +
+				'html.pt-watch-only [data-testid="DVWebNode-sitewide-footer-wrapper"]' +
+				'{display:none!important;}' +
+				'html.pt-watch-only ' + LANDING + '{padding-top:96px;}' +
+				'#prime-tizen-notice,#prime-tizen-startup{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);' +
+				'z-index:2147483646;padding:24px 36px;border-radius:12px;background:rgba(0,0,0,.85);' +
+				'color:#fff;font:24px/1.4 sans-serif;text-align:center;white-space:pre-line;pointer-events:none;display:none;}' +
+				'#prime-tizen-startup{display:block;}' +
+				// Minimal detail ("resume") page: no artwork, posters, background art or trailers.
+				'html.pt-minimal-detail img:not(' + PLAYER + ' img),' +
+				'html.pt-minimal-detail picture:not(' + PLAYER + ' picture),' +
+				'html.pt-minimal-detail video:not(' + PLAYER + ' video)' +
+				'{display:none!important;}' +
+				'html.pt-minimal-detail body *:not(' + PLAYER + '):not(' + PLAYER + ' *),' +
+				'html.pt-minimal-detail body *:not(' + PLAYER + '):not(' + PLAYER + ' *)::before,' +
+				'html.pt-minimal-detail body *:not(' + PLAYER + '):not(' + PLAYER + ' *)::after' +
+				'{background-image:none!important;}';
+			(document.head || document.documentElement).appendChild(style);
+		}
+
+		function isDetailPage() {
+			return /\/detail\//.test(location.pathname);
+		}
+
+		function minimalDetail() {
+			return enabled && isDetailPage();
+		}
+
+		// display:none alone doesn't stop <img> downloads, so park the URLs while the page is minimal.
+		function stripImages(root) {
+			if (!root || root.nodeType !== 1) return;
+			var imgs = root.tagName === 'IMG' ? [root] : root.querySelectorAll('img[src], img[srcset], source[srcset]');
+			for (var i = 0; i < imgs.length; i++) {
+				var img = imgs[i];
+				if (img.closest(PLAYER)) continue;
+				if (img.hasAttribute('srcset')) {
+					img.setAttribute('data-pt-srcset', img.getAttribute('srcset'));
+					img.removeAttribute('srcset');
+				}
+				if (img.hasAttribute('src')) {
+					img.setAttribute('data-pt-src', img.getAttribute('src'));
+					img.removeAttribute('src');
+				}
+			}
+		}
+
+		function restoreImages() {
+			var imgs = document.querySelectorAll('[data-pt-src], [data-pt-srcset]');
+			for (var i = 0; i < imgs.length; i++) {
+				var img = imgs[i];
+				if (img.hasAttribute('data-pt-srcset')) img.setAttribute('srcset', img.getAttribute('data-pt-srcset'));
+				if (img.hasAttribute('data-pt-src')) img.setAttribute('src', img.getAttribute('data-pt-src'));
+				img.removeAttribute('data-pt-srcset');
+				img.removeAttribute('data-pt-src');
+			}
+		}
+
+		function onMutations(records) {
+			if (minimalDetail()) {
+				for (var i = 0; i < records.length; i++) {
+					var added = records[i].addedNodes;
+					for (var j = 0; j < added.length; j++) stripImages(added[j]);
+				}
+			}
+			queueMark();
+		}
+
+		function updateDetail() {
+			var minimal = minimalDetail();
+			document.documentElement.classList.toggle('pt-minimal-detail', minimal);
+			if (minimal) stripImages(document.body);
+		}
+
+		function isContinueRow(row) {
+			var title = row.querySelector('[data-testid="carousel-title"]');
+			if (title && CONTINUE_RE.test(title.textContent)) return true;
+			// Non-English UI: the continue-watching row is the one whose cards show progress bars.
+			return !!row.querySelector('[data-testid="progress-bar"]');
+		}
+
+		function showNotice(text) {
+			if (!notice) {
+				notice = document.createElement('div');
+				notice.id = 'prime-tizen-notice';
+				document.documentElement.appendChild(notice);
+			}
+			notice.textContent = text;
+			notice.style.display = text ? 'block' : 'none';
+		}
+
+		function mark() {
+			markQueued = false;
+			updateDetail();
+			var main = document.querySelector(LANDING);
+			if (!enabled || !main) {
+				showNotice('');
+				return;
+			}
+			var kept = 0;
+			var rows = main.querySelectorAll('[data-testid="navigation-carousel-wrapper"]');
+			Array.prototype.forEach.call(rows, function (row) {
+				var keep = isContinueRow(row);
+				row.classList.toggle('pt-keep', keep);
+				if (keep) kept++;
+			});
+			// Row-level blocks without a test id (e.g. collection banners) sit next to the carousels.
+			var first = rows[0];
+			if (first && first.parentElement) {
+				Array.prototype.forEach.call(first.parentElement.children, function (child) {
+					if (child.tagName !== 'SCRIPT' && !child.hasAttribute('data-testid')) child.classList.add('pt-hide');
+				});
+			}
+			showNotice(rows.length && !kept
+				? 'Nothing in Continue watching yet.\nStart a title on your phone, or press GREEN to show everything.'
+				: '');
+		}
+
+		function queueMark() {
+			if (markQueued) return;
+			markQueued = true;
+			setTimeout(mark, 150);
+		}
+
+		function apply() {
+			document.documentElement.classList.toggle('pt-watch-only', enabled);
+			if (!enabled) restoreImages();
+			mark();
+		}
+
+		return {
+			isContinueRow: isContinueRow,
+			start: function () {
+				injectStyle();
+				apply();
+				new MutationObserver(onMutations).observe(document.documentElement, { childList: true, subtree: true });
+				log('Watch-only home', enabled ? 'on' : 'off');
+			},
+			toggle: function () {
+				enabled = !enabled;
+				apply();
+				log('Watch-only home', enabled ? 'on' : 'off');
+			},
+		};
+	})();
+
+	/* ------------------------------------------------------------------ */
+	/* Auto-resume: a Continue-watching tile goes straight to playback    */
+	/* ------------------------------------------------------------------ */
+
+	var AutoResume = (function () {
+		var FLAG = 'primeTizenAutoResume';
+		// Prime ships different detail-page layouts per region/account; the main CTA is the first match.
+		var PLAY_BUTTONS = [
+			'[data-testid="dp-atf-play-button"]',
+			'a.fbl-play-btn[href*="autoplay=1"]',
+			'[data-testid="play"][href*="autoplay=1"]',
+			'[data-automation-id="play"]',
+		];
+		var MAX_WAIT_MS = 20000;
+		var timer = null;
+
+		function pending() {
+			var at = Number(sessionStorage.getItem(FLAG) || 0);
+			return at && Date.now() - at < MAX_WAIT_MS;
+		}
+
+		function clear() {
+			sessionStorage.removeItem(FLAG);
+			clearInterval(timer);
+			timer = null;
+		}
+
+		function findPlayButton() {
+			for (var i = 0; i < PLAY_BUTTONS.length; i++) {
+				var matches = document.querySelectorAll(PLAY_BUTTONS[i]);
+				for (var j = 0; j < matches.length; j++) {
+					var el = matches[j];
+					if (el.offsetWidth && el.getAttribute('aria-disabled') !== 'true') return el;
+				}
+			}
+			return null;
+		}
+
+		function check() {
+			if (!pending()) return clear();
+			if (!/\/detail\//.test(location.pathname)) return;
+			var button = findPlayButton();
+			if (!button) return;
+			clear();
+			log('Auto-resuming', button.getAttribute('aria-label') || button.textContent.trim());
+			button.click();
+		}
+
+		function watch() {
+			if (!timer) timer = setInterval(check, 300);
+			check();
+		}
+
+		function onClick(event) {
+			var row = event.target && event.target.closest && event.target.closest('[data-testid="navigation-carousel-wrapper"]');
+			if (!row || !WatchOnly.isContinueRow(row) || !event.target.closest('a[href*="/detail/"]')) return;
+			sessionStorage.setItem(FLAG, String(Date.now()));
+			watch();
+		}
+
+		/* On app launch, play the most recent Continue-watching title (once per launch). */
+		var STARTUP_FLAG = 'primeTizenStartupDone';
+		var STARTUP_COUNTDOWN_S = 3;
+		var STARTUP_GIVE_UP_MS = 30000;
+
+		function firstContinueLink() {
+			var rows = document.querySelectorAll('main[data-testid="landingpage"] [data-testid="navigation-carousel-wrapper"]');
+			for (var i = 0; i < rows.length; i++) {
+				if (!WatchOnly.isContinueRow(rows[i])) continue;
+				var link = rows[i].querySelector('[data-testid="card"] a[href*="/detail/"]');
+				if (link) return link;
+			}
+			return null;
+		}
+
+		function titleOf(link) {
+			var img = link.querySelector('img[alt]');
+			return (link.getAttribute('aria-label') || (img && img.alt) || '').trim();
+		}
+
+		function startupPlay() {
+			if (sessionStorage.getItem(STARTUP_FLAG)) return;
+			var startedAt = Date.now();
+			var poll = setInterval(function () {
+				if (Date.now() - startedAt > STARTUP_GIVE_UP_MS || sessionStorage.getItem(STARTUP_FLAG)) {
+					clearInterval(poll);
+					return;
+				}
+				var link = firstContinueLink();
+				if (!link) return;
+				clearInterval(poll);
+				sessionStorage.setItem(STARTUP_FLAG, '1');
+				countdown(link);
+			}, 500);
+		}
+
+		var cancelCountdown = null;
+
+		function countdown(link) {
+			var remaining = STARTUP_COUNTDOWN_S;
+			var name = titleOf(link);
+			var box = document.createElement('div');
+			box.id = 'prime-tizen-startup';
+			document.documentElement.appendChild(box);
+
+			function render() {
+				box.textContent = 'Resuming ' + (name ? '"' + name + '"' : 'your last title') + ' in ' + remaining +
+									'...\nPress any key to cancel';
+			}
+
+			function finish(play) {
+				clearInterval(tick);
+				cancelCountdown = null;
+				box.remove();
+				if (!play) {
+					log('Startup resume cancelled');
+					return;
+				}
+				if (!link.isConnected) link = firstContinueLink();
+				if (link) link.click();
+			}
+
+			var tick = setInterval(function () {
+				remaining--;
+				if (remaining <= 0) finish(true);
+				else render();
+			}, 1000);
+			cancelCountdown = function () { finish(false); };
+			render();
+			log('Startup resume', name || '(untitled)');
+		}
+
+		return {
+			start: function () {
+				document.addEventListener('click', onClick, true);
+				// The detail page may be a full page load rather than an in-app navigation.
+				if (pending()) watch();
+				startupPlay();
+			},
+			// Returns true if a key press was used to cancel the startup countdown.
+			cancelStartup: function () {
+				if (!cancelCountdown) return false;
+				cancelCountdown();
+				return true;
+			},
+		};
+	})();
+
+	/* ------------------------------------------------------------------ */
+	/* No trailer autoplay (hero banners, hover previews, detail pages)   */
+	/* ------------------------------------------------------------------ */
+
+	function isTrailer(video) {
+		// The real movie/episode always plays inside the web player; detached videos are left alone.
+		return video.isConnected && !video.closest('#dv-web-player');
+	}
+
+	function stopTrailer(video) {
+		video.muted = true;
+		video.autoplay = false;
+		if (!video.paused) video.pause();
+	}
+
+	function blockTrailerAutoplay() {
+		// Media events don't bubble, but they do pass through the capture phase.
+		['play', 'playing'].forEach(function (type) {
+			document.addEventListener(type, function (event) {
+				var video = event.target;
+				if (video && video.tagName === 'VIDEO' && isTrailer(video)) stopTrailer(video);
+			}, true);
+		});
+		onReady(function () {
+			Array.prototype.forEach.call(document.querySelectorAll('video'), function (video) {
+				if (isTrailer(video)) stopTrailer(video);
+			});
+		});
+	}
+
+	function isVisible(element) {
+		if (!(element instanceof HTMLElement) || element.hidden) return false;
+		var style = getComputedStyle(element);
+		var rect = element.getBoundingClientRect();
+		return style.display !== 'none' &&
+			style.visibility !== 'hidden' &&
+			Number(style.opacity) !== 0 &&
+			rect.width > 0 &&
+			rect.height > 0;
+	}
+
+	function isTextInput(el) {
+		if (!el || !(el instanceof HTMLElement)) return false;
+		if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+		if (el.tagName !== 'INPUT') return false;
+		return !/^(button|checkbox|radio|submit|reset|image|file|range|color|hidden)$/i.test(el.type || 'text');
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* Ad skipping                                                         */
+	/* ------------------------------------------------------------------ */
+
+	var AdSkipper = (function () {
+		var PLAYER_SELECTOR =
+			'[data-testid="webPlayerUIContainer"], .webPlayerUIContainer, [class*="atvwebplayersdk-player-container"]';
+		var SKIP_CONTROL_SELECTOR = [
+			'button',
+			'[role="button"]',
+			'[data-testid*="skip" i]',
+			'[class*="skipelement" i]',
+		].join(',');
+		var AD_LABEL_SELECTOR = '#dv-web-player [aria-label^="Ad playing." i]';
+		var AD_TIMER_SELECTOR = '.atvwebplayersdk-ad-timer-remaining-time';
+		var SKIP_LABEL_PATTERN = /^skip\s+ads?\b/i;
+		var CLICK_COOLDOWN_MS = 1500;
+		// TV hardware decoders may reject high rates, so fall back progressively.
+		var AD_PLAYBACK_RATES = [16, 8, 4, 2];
+
+		var lastClickedAt = new WeakMap();
+		var adWasActive = false;
+		var adVideo = null;
+		var adRate = null;
+		var previousPlaybackRate = 1;
+		var mutedByScript = false;
+		var recoveryTimer = null;
+		var syncQueued = false;
+		var lastSyncAt = 0;
+		var MIN_SYNC_INTERVAL_MS = 250;
+
+		function getPlayerRoot() {
+			var video = document.querySelector('video');
+			if (!video) return null;
+			return document.querySelector(PLAYER_SELECTOR) || video.parentElement;
+		}
+
+		function getControlLabel(element) {
+			return normalizeLabel([
+				element.getAttribute('aria-label'),
+				element.getAttribute('title'),
+				element.getAttribute('data-testid'),
+				element.textContent,
+			].filter(Boolean).join(' '));
+		}
+
+		function findSkipControls() {
+			var root = getPlayerRoot();
+			if (!root) return [];
+			return Array.prototype.filter.call(root.querySelectorAll(SKIP_CONTROL_SELECTOR), function (element) {
+				// Label test first: it's cheap, while isVisible forces style/layout work.
+				if (!SKIP_LABEL_PATTERN.test(getControlLabel(element))) return false;
+				return isVisible(element) && !element.matches(':disabled, [aria-disabled="true"]');
+			});
+		}
+
+		function clickSkipControls() {
+			var now = Date.now();
+			var clicked = false;
+			findSkipControls().forEach(function (element) {
+				if (now - (lastClickedAt.get(element) || 0) < CLICK_COOLDOWN_MS) return;
+				lastClickedAt.set(element, now);
+				var label = getControlLabel(element);
+				Pointer.fireClick(element);
+				clicked = true;
+				log('Clicked:', label);
+			});
+			return clicked;
+		}
+
+		function hasPaidAdSignal() {
+			var indicators = document.querySelectorAll(AD_LABEL_SELECTOR);
+			for (var i = 0; i < indicators.length; i++) {
+				var timer = indicators[i].querySelector(AD_TIMER_SELECTOR);
+				if (!timer) continue;
+				if (/^(?:\d+:)?\d{1,2}:\d{2}$/.test(normalizeLabel(timer.textContent))) return true;
+			}
+			return false;
+		}
+
+		function getActiveVideo() {
+			var videos = document.querySelectorAll('#dv-web-player video');
+			for (var i = 0; i < videos.length; i++) {
+				if (isVisible(videos[i]) && !videos[i].paused) return videos[i];
+			}
+			return null;
+		}
+
+		function applyAdRate(video) {
+			for (var i = 0; i < AD_PLAYBACK_RATES.length; i++) {
+				try {
+					video.playbackRate = AD_PLAYBACK_RATES[i];
+					if (video.playbackRate === AD_PLAYBACK_RATES[i]) return AD_PLAYBACK_RATES[i];
+				} catch (e) { /* try a lower rate */ }
+			}
+			return null;
+		}
+
+		function speedUpAd() {
+			var video = getActiveVideo();
+			if (!video) return;
+
+			if (video !== adVideo) {
+				adVideo = video;
+				previousPlaybackRate = video.playbackRate;
+				mutedByScript = !video.muted;
+				adRate = null;
+			}
+
+			if (adRate === null || video.playbackRate !== adRate) {
+				adRate = applyAdRate(video);
+				if (adRate) log('Ad playing; rate set to', adRate + 'x');
+			}
+			if (mutedByScript) video.muted = true;
+		}
+
+		function restorePlaybackSettings() {
+			if (!adVideo) return;
+			var videos = [adVideo].concat(Array.prototype.slice.call(document.querySelectorAll('video')));
+			videos.forEach(function (video) {
+				if (video === adVideo || (adRate && video.playbackRate === adRate)) {
+					try { video.playbackRate = previousPlaybackRate; } catch (e) { /* ignore */ }
+				}
+			});
+			if (mutedByScript) adVideo.muted = false;
+			log('Ad ended; restored playback settings');
+			adVideo = null;
+			adRate = null;
+			previousPlaybackRate = 1;
+			mutedByScript = false;
+		}
+
+		function recoverPlayback() {
+			var video = Array.prototype.find.call(document.querySelectorAll('video'), isVisible);
+			if (!video || !video.paused || video.ended) return;
+			var playPromise = video.play();
+			if (playPromise && typeof playPromise.catch === 'function') {
+				playPromise.catch(function (error) { log('Playback recovery was blocked:', error); });
+			}
+		}
+
+		function sync() {
+			syncQueued = false;
+			lastSyncAt = Date.now();
+			// No player on screen (browse pages): nothing to skip, keep the page fast.
+			if (!adWasActive && !adVideo && !document.querySelector('#dv-web-player video')) return;
+
+			var paidAdActive = hasPaidAdSignal();
+
+			clickSkipControls();
+			if (paidAdActive) speedUpAd();
+			else restorePlaybackSettings();
+
+			if (adWasActive && !paidAdActive) {
+				clearTimeout(recoveryTimer);
+				recoveryTimer = setTimeout(recoverPlayback, 500);
+			}
+			adWasActive = paidAdActive;
+		}
+
+		function queueSync() {
+			if (syncQueued) return;
+			syncQueued = true;
+			setTimeout(sync, Math.max(0, MIN_SYNC_INTERVAL_MS - (Date.now() - lastSyncAt)));
+		}
+
+		function start() {
+			new MutationObserver(queueSync).observe(document.documentElement, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				attributeFilter: ['aria-label', 'aria-disabled', 'class', 'data-testid', 'style'],
+			});
+			setInterval(sync, 500);
+			sync();
+			log('Ad skipper running');
+		}
+
+		return {
+			start: start,
+			isAdActive: function () { return adWasActive; },
+		};
+	})();
+
+	/* ------------------------------------------------------------------ */
+	/* Remote-controlled cursor                                            */
+	/* ------------------------------------------------------------------ */
+
+	var Pointer = (function () {
+		var TAP_STEP = 16;
+		var MIN_SPEED = 450;
+		var MAX_SPEED = 1600;
+		var ACCEL_MS = 700;
+		// Safety stop if a keyup is ever missed (TV key-repeat fires well within this).
+		var KEY_STALE_MS = 900;
+		var EDGE = 48;
+		var SCROLL_STEP = 260;
+		var SCROLL_INTERVAL_MS = 280;
+		// Prime's hover handlers (card expand + preview) are expensive on the TV, so hover is
+		// only dispatched once the cursor comes to rest, never while it is moving.
+		var HOVER_REST_MS = 220;
+		var HIDE_AFTER_MS = 4000;
+
+		var el = null;
+		var x = window.innerWidth / 2;
+		var y = window.innerHeight / 2;
+		var enabled = true;
+		var visible = false;
+		var hideTimer = null;
+		var hoverTarget = null;
+		var held = { left: false, right: false, up: false, down: false };
+		var holdStartedAt = 0;
+		var lastKeyAt = 0;
+		var lastFrameAt = 0;
+		var hoverTimer = null;
+		var lastScrollAt = 0;
+		var rafId = 0;
+
+		function create() {
+			var style = document.createElement('style');
+			style.textContent =
+				'#prime-tizen-cursor{position:fixed;left:0;top:0;width:28px;height:28px;margin:-14px 0 0 -14px;' +
+				'pointer-events:none;z-index:2147483647;will-change:transform;opacity:0;transition:opacity .25s;}' +
+				'#prime-tizen-cursor.visible{opacity:1;}' +
+				'#prime-tizen-cursor>div{width:100%;height:100%;box-sizing:border-box;border-radius:50%;' +
+				'border:3px solid #fff;background:rgba(0,168,225,.55);' +
+				'box-shadow:0 0 0 2px rgba(0,0,0,.6),0 0 12px rgba(0,168,225,.9);transition:transform .08s;}' +
+				'#prime-tizen-cursor.pressed>div{transform:scale(.7);}';
+			document.documentElement.appendChild(style);
+
+			el = document.createElement('div');
+			el.id = 'prime-tizen-cursor';
+			el.appendChild(document.createElement('div'));
+			document.documentElement.appendChild(el);
+			render();
+		}
+
+		function render() {
+			if (el) el.style.transform = 'translate3d(' + Math.round(x) + 'px,' + Math.round(y) + 'px,0)';
+		}
+
+		function show() {
+			if (!el) return;
+			if (!visible) {
+				visible = true;
+				el.classList.add('visible');
+			}
+			clearTimeout(hideTimer);
+			hideTimer = setTimeout(hide, HIDE_AFTER_MS);
+		}
+
+		function hide() {
+			visible = false;
+			if (el) el.classList.remove('visible');
+		}
+
+		function targetAt(px, py) {
+			var t = document.elementFromPoint(px, py);
+			// Descend into open shadow roots.
+			while (t && t.shadowRoot) {
+				var inner = t.shadowRoot.elementFromPoint(px, py);
+				if (!inner || inner === t) break;
+				t = inner;
+			}
+			return t;
+		}
+
+		function mouseInit(type, px, py) {
+			return {
+				bubbles: true,
+				cancelable: true,
+				composed: true,
+				view: window,
+				clientX: px,
+				clientY: py,
+				screenX: px,
+				screenY: py,
+				button: 0,
+				buttons: /down$/.test(type) ? 1 : 0,
+				pointerId: 1,
+				pointerType: 'mouse',
+				isPrimary: true,
+			};
+		}
+
+		function dispatch(target, type, px, py) {
+			var Ctor = type.indexOf('pointer') === 0 && window.PointerEvent ? PointerEvent : MouseEvent;
+			target.dispatchEvent(new Ctor(type, mouseInit(type, px, py)));
+		}
+
+		function cancelHover() {
+			clearTimeout(hoverTimer);
+			hoverTimer = null;
+		}
+
+		function scheduleHover() {
+			cancelHover();
+			hoverTimer = setTimeout(function () {
+				hoverTimer = null;
+				hoverAt(x, y);
+			}, HOVER_REST_MS);
+		}
+
+		// Prime expands carousel tiles and plays previews on hover; never hover them.
+		var NO_HOVER = '[data-testid="navigation-carousel-wrapper"],[data-testid="top-hero"]';
+
+		function hoverAt(px, py) {
+			var t = targetAt(px, py);
+			if (t && t.closest && t.closest(NO_HOVER)) t = null;
+			if (!t) {
+				if (hoverTarget && hoverTarget.isConnected) {
+					dispatch(hoverTarget, 'pointerout', px, py);
+					dispatch(hoverTarget, 'mouseout', px, py);
+				}
+				hoverTarget = null;
+				return;
+			}
+			if (t !== hoverTarget) {
+				if (hoverTarget && hoverTarget.isConnected) {
+					dispatch(hoverTarget, 'pointerout', px, py);
+					dispatch(hoverTarget, 'mouseout', px, py);
+				}
+				dispatch(t, 'pointerover', px, py);
+				dispatch(t, 'mouseover', px, py);
+				hoverTarget = t;
+			}
+			dispatch(t, 'pointermove', px, py);
+			dispatch(t, 'mousemove', px, py);
+		}
+
+		function fireClick(target, px, py) {
+			if (px === undefined) {
+				var rect = target.getBoundingClientRect();
+				px = rect.left + rect.width / 2;
+				py = rect.top + rect.height / 2;
+			}
+			['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (type) {
+				dispatch(target, type, px, py);
+			});
+		}
+
+		function focusableAncestor(t) {
+			while (t && t !== document.body) {
+				if (isTextInput(t)) return t;
+				if (t.tabIndex >= 0 || /^(A|BUTTON|SELECT|INPUT|TEXTAREA)$/.test(t.tagName)) return t;
+				t = t.parentElement;
+			}
+			return null;
+		}
+
+		function clickAtCursor() {
+			if (hoverTimer) {
+				cancelHover();
+				hoverAt(x, y);
+			}
+			var t = targetAt(x, y);
+			if (!t) return;
+			if (el) {
+				el.classList.add('pressed');
+				setTimeout(function () { el.classList.remove('pressed'); }, 120);
+			}
+			var focusTarget = focusableAncestor(t);
+			if (focusTarget && typeof focusTarget.focus === 'function') {
+				try { focusTarget.focus({ preventScroll: true }); } catch (e) { focusTarget.focus(); }
+			}
+			fireClick(t, x, y);
+		}
+
+		function isScrollable(node, axis) {
+			var style = getComputedStyle(node);
+			var overflow = axis === 'y' ? style.overflowY : style.overflowX;
+			if (!/(auto|scroll|overlay)/.test(overflow)) return false;
+			return axis === 'y'
+				? node.scrollHeight > node.clientHeight + 1
+				: node.scrollWidth > node.clientWidth + 1;
+		}
+
+		function scrollFrom(target, dx, dy) {
+			var axis = dy !== 0 ? 'y' : 'x';
+			var node = target;
+			while (node && node !== document.body && node !== document.documentElement) {
+				if (node instanceof HTMLElement && isScrollable(node, axis)) {
+					var before = axis === 'y' ? node.scrollTop : node.scrollLeft;
+					// Instant scroll: smooth scrolling on the TV doubles Prime's re-render cost.
+					node.scrollBy(dx, dy);
+					// If the scroll is already at its limit, let an ancestor scroll instead.
+					var limit = axis === 'y'
+						? (dy > 0 ? node.scrollHeight - node.clientHeight : 0)
+						: (dx > 0 ? node.scrollWidth - node.clientWidth : 0);
+					if (Math.abs(before - limit) > 1) return;
+				}
+				node = node.parentElement;
+			}
+			window.scrollBy(dx, dy);
+		}
+
+		function direction() {
+			return {
+				dx: (held.right ? 1 : 0) - (held.left ? 1 : 0),
+				dy: (held.down ? 1 : 0) - (held.up ? 1 : 0),
+			};
+		}
+
+		function anyHeld() {
+			return held.left || held.right || held.up || held.down;
+		}
+
+		function moveBy(mx, my, dx, dy) {
+			// clientWidth/Height exclude scrollbars, so the cursor never parks over one.
+			var w = document.documentElement.clientWidth || window.innerWidth;
+			var h = document.documentElement.clientHeight || window.innerHeight;
+			var nx = x + mx;
+			var ny = y + my;
+			var now = Date.now();
+
+			if (now - lastScrollAt > SCROLL_INTERVAL_MS) {
+				var sx = (nx < EDGE && dx < 0) ? -SCROLL_STEP : (nx > w - EDGE && dx > 0) ? SCROLL_STEP : 0;
+				var sy = (ny < EDGE && dy < 0) ? -SCROLL_STEP : (ny > h - EDGE && dy > 0) ? SCROLL_STEP : 0;
+				if (sx || sy) {
+					lastScrollAt = now;
+					var t = targetAt(x, y);
+					if (sy) scrollFrom(t, 0, sy);
+					if (sx) scrollFrom(t, sx, 0);
+				}
+			}
+
+			x = Math.max(4, Math.min(w - 4, nx));
+			y = Math.max(4, Math.min(h - 4, ny));
+			render();
+		}
+
+		function frame(ts) {
+			rafId = 0;
+			if (!anyHeld()) return;
+			if (Date.now() - lastKeyAt > KEY_STALE_MS) {
+				release();
+				return;
+			}
+			var dt = Math.min(50, ts - (lastFrameAt || ts));
+			lastFrameAt = ts;
+			var d = direction();
+			if (d.dx || d.dy) {
+				var progress = Math.min(1, (Date.now() - holdStartedAt) / ACCEL_MS);
+				var dist = (MIN_SPEED + (MAX_SPEED - MIN_SPEED) * progress * progress) * dt / 1000;
+				var norm = d.dx && d.dy ? Math.SQRT1_2 : 1;
+				moveBy(d.dx * dist * norm, d.dy * dist * norm, d.dx, d.dy);
+				show();
+			}
+			rafId = requestAnimationFrame(frame);
+		}
+
+		function press(name, isRepeat) {
+			lastKeyAt = Date.now();
+			// First press after the cursor was hidden just reveals it.
+			if (!visible && !anyHeld()) {
+				show();
+				scheduleHover();
+				return;
+			}
+			show();
+			cancelHover();
+			if (held[name]) return;
+			var wasHeld = anyHeld();
+			held[name] = true;
+			if (!wasHeld) holdStartedAt = Date.now();
+			if (!isRepeat) {
+				var d = direction();
+				moveBy(d.dx * TAP_STEP, d.dy * TAP_STEP, d.dx, d.dy);
+			}
+			if (!rafId) {
+				lastFrameAt = 0;
+				rafId = requestAnimationFrame(frame);
+			}
+		}
+
+		function release(name) {
+			if (name) held[name] = false;
+			else held.left = held.right = held.up = held.down = false;
+			if (!anyHeld()) {
+				if (rafId) cancelAnimationFrame(rafId);
+				rafId = 0;
+				scheduleHover();
+			}
+		}
+
+		function setEnabled(value) {
+			enabled = value;
+			release();
+			if (!enabled) {
+				cancelHover();
+				hide();
+			} else show();
+			log('Cursor', enabled ? 'enabled' : 'disabled');
+		}
+
+		return {
+			create: create,
+			press: press,
+			release: release,
+			click: clickAtCursor,
+			fireClick: fireClick,
+			show: show,
+			isVisible: function () { return visible; },
+			isEnabled: function () { return enabled; },
+			toggle: function () { setEnabled(!enabled); },
+		};
+	})();
+
+	/* ------------------------------------------------------------------ */
+	/* Remote keys                                                         */
+	/* ------------------------------------------------------------------ */
+
+	var KEY = {
+		LEFT: 37,
+		UP: 38,
+		RIGHT: 39,
+		DOWN: 40,
+		ENTER: 13,
+		BACK: 10009,
+		PLAY_PAUSE: 10252,
+		PLAY: 415,
+		PAUSE: 19,
+		STOP: 413,
+		FAST_FORWARD: 417,
+		REWIND: 412,
+		RED: 403,
+		GREEN: 404,
+	};
+	var SEEK_SECONDS = 10;
+
+	function getMainVideo() {
+		var videos = document.querySelectorAll('#dv-web-player video, video');
+		for (var i = 0; i < videos.length; i++) {
+			if (isVisible(videos[i]) && videos[i].readyState > 0) return videos[i];
+		}
+		return null;
+	}
+
+	function playerIsOpen() {
+		if (!IS_PRIME) return /\/watch\b/.test(location.pathname) && !!getMainVideo();
+		var player = document.getElementById('dv-web-player');
+		return !!(player && isVisible(player) && player.querySelector('video'));
+	}
+
+	function closePlayer() {
+		var close = document.querySelector(
+			'#dv-web-player [class*="closebutton" i], #dv-web-player button[aria-label*="close" i], ' +
+			'#dv-web-player [aria-label*="back" i][role="button"], #dv-web-player button[aria-label*="back" i]'
+		);
+		if (close && isVisible(close)) {
+			Pointer.fireClick(close);
+			return true;
+		}
+		return false;
+	}
+
+	// The Tizen API isn't exposed to primevideo.com, so the PC companion closes the app when it sees
+	// "Exit requested". Fallback: go back to the launcher page, which exits when reached from Prime.
+	function exitApp() {
+		try {
+			if (window.tizen && tizen.application) {
+				tizen.application.getCurrentApplication().exit();
+				return;
+			}
+		} catch (e) { log('Exit failed:', e); }
+		var video = getMainVideo();
+		if (video) video.pause();
+		log('Exit requested');
+		setTimeout(function () {
+			if (history.length > 1) history.go(-(history.length - 1));
+			else window.close();
+		}, 3000);
+	}
+
+	function handleBack() {
+		var active = document.activeElement;
+		if (isTextInput(active)) {
+			active.blur();
+			return;
+		}
+		exitApp();
+	}
+
+	function handleMediaKey(code) {
+		var video = getMainVideo();
+		if (!video) return false;
+		switch (code) {
+			case KEY.PLAY_PAUSE:
+				if (video.paused) video.play();
+				else video.pause();
+				return true;
+			case KEY.PLAY:
+				video.play();
+				return true;
+			case KEY.PAUSE:
+				video.pause();
+				return true;
+			case KEY.STOP:
+				video.pause();
+				closePlayer();
+				return true;
+			case KEY.FAST_FORWARD:
+			case KEY.REWIND:
+				Seeker.seekBy(video, code === KEY.FAST_FORWARD ? SEEK_SECONDS : -SEEK_SECONDS);
+				return true;
+		}
+		return false;
+	}
+
+	/* Seeking: repeated presses accumulate and are applied in one jump (each MSE seek rebuffers). */
+	var Seeker = (function () {
+		var APPLY_DELAY_MS = 450;
+		var OSD_MS = 1500;
+		var osd = null;
+		var pendingVideo = null;
+		var pendingTarget = 0;
+		var applyTimer = null;
+		var hideTimer = null;
+
+		function format(seconds) {
+			seconds = Math.max(0, Math.floor(seconds));
+			var h = Math.floor(seconds / 3600);
+			var m = Math.floor(seconds / 60) % 60;
+			var s = seconds % 60;
+			return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s;
+		}
+
+		function show(text) {
+			if (!osd) {
+				osd = document.createElement('div');
+				osd.id = 'prime-tizen-seek';
+				osd.style.cssText = 'position:fixed;left:50%;top:12%;transform:translateX(-50%);z-index:2147483646;' +
+					'padding:14px 28px;border-radius:10px;background:rgba(0,0,0,.75);color:#fff;' +
+					'font:bold 30px/1.3 sans-serif;pointer-events:none;';
+				document.documentElement.appendChild(osd);
+			}
+			osd.textContent = text;
+			osd.style.display = 'block';
+			clearTimeout(hideTimer);
+			hideTimer = setTimeout(function () { osd.style.display = 'none'; }, OSD_MS);
+		}
+
+		function apply() {
+			applyTimer = null;
+			if (pendingVideo && pendingVideo.isConnected) pendingVideo.currentTime = pendingTarget;
+			pendingVideo = null;
+		}
+
+		return {
+			seekBy: function (video, delta) {
+				// Never seek during ads; that would skip program content, not the ad.
+				if (AdSkipper.isAdActive()) {
+					show('Can\'t seek during an ad');
+					return;
+				}
+				if (pendingVideo !== video) {
+					pendingVideo = video;
+					pendingTarget = video.currentTime;
+				}
+				pendingTarget = Math.max(0, pendingTarget + delta);
+				if (isFinite(video.duration)) pendingTarget = Math.min(video.duration - 1, pendingTarget);
+				var diff = Math.round(pendingTarget - video.currentTime);
+				var mag = Math.abs(diff);
+				show((diff >= 0 ? '+' : '\u2212') + (mag >= 60 ? format(mag) : mag + 's') + '  \u2192  ' + format(pendingTarget) +
+					(isFinite(video.duration) ? ' / ' + format(video.duration) : ''));
+				clearTimeout(applyTimer);
+				applyTimer = setTimeout(apply, APPLY_DELAY_MS);
+			},
+		};
+	})();
+
+	/* Left/Right while watching: tap = ±10 s (on release), hold = ±5 min, repeating while held. */
+	var HoldSeek = (function () {
+		var LONG_PRESS_MS = 600;
+		var LONG_REPEAT_MS = 700;
+		var LONG_SEEK_SECONDS = 300;
+		var held = null; // { code, video, timer, longs }
+
+		function longStep() {
+			if (!held) return;
+			held.longs++;
+			Seeker.seekBy(held.video, held.code === KEY.RIGHT ? LONG_SEEK_SECONDS : -LONG_SEEK_SECONDS);
+			held.timer = setTimeout(longStep, LONG_REPEAT_MS);
+		}
+
+		return {
+			down: function (code, video, isRepeat) {
+				if (held && held.code === code) return; // auto-repeat while holding
+				if (held) clearTimeout(held.timer);
+				if (isRepeat) return;
+				held = { code: code, video: video, longs: 0, timer: setTimeout(longStep, LONG_PRESS_MS) };
+			},
+			// Returns true if the key-up belonged to a playback seek.
+			up: function (code) {
+				if (!held || held.code !== code) return false;
+				clearTimeout(held.timer);
+				if (!held.longs) Seeker.seekBy(held.video, code === KEY.RIGHT ? SEEK_SECONDS : -SEEK_SECONDS);
+				held = null;
+				return true;
+			},
+		};
+	})();
+
+	// While watching with the cursor hidden, the remote acts like a normal TV player remote.
+	function handlePlaybackKey(code, isRepeat) {
+		if (Pointer.isVisible() || !playerIsOpen()) return false;
+		var video = getMainVideo();
+		if (!video || (IS_PRIME && !video.closest('#dv-web-player'))) return false;
+		if (code === KEY.LEFT || code === KEY.RIGHT) {
+			HoldSeek.down(code, video, isRepeat);
+			return true;
+		}
+		if (isRepeat) return code === KEY.ENTER;
+		if (code === KEY.ENTER) {
+			if (video.paused) video.play();
+			else video.pause();
+			return true;
+		}
+		return false;
+	}
+
+	function onKeyDown(event) {
+		if (!event.isTrusted) return;
+		// Any key during the startup "Resuming…" countdown only cancels it.
+		if (AutoResume.cancelStartup()) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
+		var code = event.keyCode;
+		var handled = false;
+
+		switch (code) {
+			case KEY.RED:
+				Pointer.toggle();
+				handled = true;
+				break;
+			case KEY.GREEN:
+				if (IS_PRIME) WatchOnly.toggle();
+				handled = true;
+				break;
+			case KEY.BACK:
+				handleBack();
+				handled = true;
+				break;
+			case KEY.PLAY_PAUSE:
+			case KEY.PLAY:
+			case KEY.PAUSE:
+			case KEY.STOP:
+			case KEY.FAST_FORWARD:
+			case KEY.REWIND:
+				handled = handleMediaKey(code);
+				break;
+			case KEY.LEFT:
+			case KEY.UP:
+			case KEY.RIGHT:
+			case KEY.DOWN:
+			case KEY.ENTER:
+				// Let the on-screen keyboard / text fields handle keys while typing.
+				if (!Pointer.isEnabled() || isTextInput(document.activeElement)) break;
+				if (handlePlaybackKey(code, event.repeat)) {
+					handled = true;
+					break;
+				}
+				if (code === KEY.ENTER) {
+					if (!event.repeat) Pointer.click();
+				} else {
+					Pointer.press(ARROW_NAMES[code], event.repeat);
+				}
+				handled = true;
+				break;
+		}
+
+		if (handled) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+		}
+	}
+
+	var ARROW_NAMES = {};
+	ARROW_NAMES[KEY.LEFT] = 'left';
+	ARROW_NAMES[KEY.RIGHT] = 'right';
+	ARROW_NAMES[KEY.UP] = 'up';
+	ARROW_NAMES[KEY.DOWN] = 'down';
+
+	function onKeyUp(event) {
+		var name = ARROW_NAMES[event.keyCode];
+		if (!name) return;
+		if (HoldSeek.up(event.keyCode)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
+		Pointer.release(name);
+		if (Pointer.isEnabled() && !isTextInput(document.activeElement)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+		}
+	}
+
+	function registerKeys() {
+		try {
+			if (window.tizen && tizen.tvinputdevice) {
+				['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
+					'MediaFastForward', 'MediaRewind', 'ColorF0Red', 'ColorF1Green'].forEach(function (name) {
+					try { tizen.tvinputdevice.registerKey(name); } catch (e) { /* already registered */ }
+				});
+			}
+		} catch (e) { /* not on a TV */ }
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* JioHotstar: log in if needed, then open the requested URL           */
+	/* ------------------------------------------------------------------ */
+
+	var Hotstar = (function () {
+		var TARGET_KEY = 'ptHotstarTarget';
+		var SEEN_KEY = 'ptHotstarTargetSeen';
+		var notice = null;
+		var loginOpenedAt = 0;
+
+		function loginState() {
+			try {
+				var v = JSON.parse(localStorage.getItem('loginState') || 'null');
+				return v && v.value;
+			} catch (e) { return null; }
+		}
+
+		function showNotice(text) {
+			if (!document.body) return;
+			if (!notice) {
+				notice = document.createElement('div');
+				notice.id = 'prime-tizen-login';
+				notice.style.cssText = 'position:fixed;left:50%;bottom:6%;transform:translateX(-50%);z-index:2147483646;' +
+					'padding:14px 28px;border-radius:10px;background:rgba(0,0,0,.8);color:#fff;' +
+					'font:bold 26px/1.4 sans-serif;text-align:center;pointer-events:none;';
+				document.body.appendChild(notice);
+			}
+			notice.textContent = text;
+		}
+
+		function hideNotice() {
+			if (notice) notice.remove();
+			notice = null;
+		}
+
+		function loginDialogOpen() {
+			return !!document.querySelector('[role="dialog"] input, [role="dialog"] img');
+		}
+
+		function openLogin() {
+			if (loginDialogOpen()) return;
+			var now = Date.now();
+			if (now - loginOpenedAt < 4000) return;
+			loginOpenedAt = now;
+			if (!/mp-login/.test(location.hash)) {
+				log('Not logged in, opening login');
+				location.hash = 'mp-login';
+				return;
+			}
+			// The hash didn't open the dialog on this page; press the site's Login button instead.
+			var buttons = document.querySelectorAll('button, a, [role="button"]');
+			for (var i = 0; i < buttons.length; i++) {
+				if (/^\s*log\s*in\s*$/i.test(buttons[i].textContent) && isVisible(buttons[i])) {
+					buttons[i].click();
+					return;
+				}
+			}
+		}
+
+		function goToTarget() {
+			var target = sessionStorage.getItem(TARGET_KEY);
+			if (!target) return;
+			sessionStorage.removeItem(TARGET_KEY);
+			if (location.href.split('#')[0] !== target) {
+				log('Opening', target);
+				location.href = target;
+			}
+		}
+
+		function check() {
+			var state = loginState();
+			if (!state) return;
+			if (state === 'GUEST') {
+				openLogin();
+				showNotice('Log in to JioHotstar: scan the QR code with your phone, or enter your mobile number');
+				return;
+			}
+			hideNotice();
+			goToTarget();
+		}
+
+		return {
+			start: function () {
+				// The companion passes the URL to open; remember it once per app launch.
+				if (window.__ptTargetUrl && !sessionStorage.getItem(SEEN_KEY)) {
+					sessionStorage.setItem(SEEN_KEY, '1');
+					sessionStorage.setItem(TARGET_KEY, window.__ptTargetUrl);
+				}
+				onReady(function () {
+					check();
+					setInterval(check, 1000);
+				});
+			},
+		};
+	})();
+
+	/* ------------------------------------------------------------------ */
+	/* Boot                                                                */
+	/* ------------------------------------------------------------------ */
+
+	registerKeys();
+	disableAnimations();
+	if (IS_PRIME) {
+		blockTrailerAutoplay();
+		WatchOnly.start();
+		AutoResume.start();
+	} else {
+		Hotstar.start();
+	}
+	window.addEventListener('keydown', onKeyDown, true);
+	window.addEventListener('keyup', onKeyUp, true);
+	window.addEventListener('blur', function () { Pointer.release(); });
+	onReady(function () {
+		Pointer.create();
+		Pointer.show();
+		if (IS_PRIME) AdSkipper.start();
+		log('Loaded');
+	});
+})();

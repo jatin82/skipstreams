@@ -1,0 +1,64 @@
+# Prime Video AdSkip: Samsung TV app + PC companion
+
+The TV app (`.wgt`) opens `https://www.primevideo.com/`. The PC companion (`companion.js`) injects
+[../userScript.js](../userScript.js) into it, which skips ads and adds the remote cursor.
+
+## Why a PC companion?
+
+A Tizen app can't inject scripts into an external website. The only way in is the web debugger, and
+the TV opens that only for an app launched in debug mode by `sdbd`. `sdbd` accepts connections only
+from the **Host PC IP** set in Developer Mode. You keep your real PC IP there, so the PC has to do
+the debug launch:
+
+1. `npm run watch` runs `sdb shell 0 debug PrimeTzn01.PrimeTizen` and gets the debug port.
+2. It forwards that port to the PC (`sdb forward`) and attaches through the Chrome DevTools Protocol.
+3. It injects `userScript.js` into every top-level Prime/Amazon page the app opens.
+4. It tells the launcher page to open Prime Video.
+
+The script is read again on every page load, so edits to `userScript.js` apply on the next launch
+without reinstalling the app.
+
+## TV setup (one time)
+
+On the TV, open **Apps**, type `12345` on the remote, turn **Developer mode** on, set **Host PC IP**
+to your PC's IP, and reboot.
+
+## Build and install
+
+Requires Node.js 18+, the Tizen CLI (`tizen`, `sdb`) and a Samsung certificate profile that is valid
+for the TV (here: `Monitor32`).
+
+```powershell
+cd tv-app
+npm install
+$env:TIZEN_CLI = "C:\Users\<you>\.tizen-extension-platform\server\sdktools\data\tools\ide\bin\tizen.bat"
+$env:TV_IP = "192.168.29.51"
+npm run install-tv        # packages dist/PrimeVideoAdSkip.wgt (active profile, or TIZEN_PROFILE) and installs it
+```
+
+## Watching
+
+```powershell
+cd tv-app
+$env:TV_IP = "192.168.29.51"
+npm run watch             # launches the app on the TV with ad skipping; keep it running while watching
+```
+
+The console shows injection events and the script's `[PrimeTizen]` logs from the TV.
+When you exit the app on the TV, the companion stops too.
+
+If you open the app from the TV's app list without the companion, it shows "Waiting for PC companion…".
+Press **OK** to open Prime Video without ad skipping and without the cursor, or **BACK** to exit.
+
+Remote (with the companion): arrows move the cursor, OK clicks, Back exits the app (the companion closes it over sdb), media keys control playback, while watching (cursor hidden) Left/Right seek ±10 s (hold for ±5 min) and OK
+plays/pauses, Red (A) toggles the cursor, and Green (B) switches between the
+"Continue watching only" home page (default) and the full page.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `No TV connected` | Make sure the TV is on and reachable, Host PC IP is this PC, then `sdb connect <TV-IP>` |
+| `Debug launch failed` | Reinstall with `npm run install-tv`; check `sdb devices` shows the TV |
+| Ads aren't skipped | Watch the companion output. Prime may have changed its player DOM; update the selectors in `userScript.js` (no reinstall needed) |
+| Prime says the browser is unsupported or video won't play | Change `USER_AGENT` in `widget/launcher.js` and reinstall |
