@@ -1236,6 +1236,8 @@
 	var Hotstar = (function () {
 		var TARGET_KEY = 'ptHotstarTarget';
 		var SEEN_KEY = 'ptHotstarTargetSeen';
+		var LOGIN_URL = 'https://www.hotstar.com/in/mypage#mp-login';
+		var LOGIN_FLOW_KEY = 'ptHotstarLoginFlow';
 		var notice = null;
 		var loginOpenedAt = 0;
 
@@ -1273,8 +1275,17 @@
 			var now = Date.now();
 			if (now - loginOpenedAt < 4000) return;
 			loginOpenedAt = now;
+			if (location.pathname.replace(/\/$/, '') !== '/in/mypage') {
+				// Come back to the page the user was on once they're logged in.
+				if (!sessionStorage.getItem(TARGET_KEY) && !/\/(paywall|mypage)/.test(location.pathname)) {
+					sessionStorage.setItem(TARGET_KEY, location.href.split('#')[0]);
+				}
+				log('Not logged in, opening', LOGIN_URL);
+				sessionStorage.setItem(LOGIN_FLOW_KEY, '1');
+				location.href = LOGIN_URL;
+				return;
+			}
 			if (!/mp-login/.test(location.hash)) {
-				log('Not logged in, opening login');
 				location.hash = 'mp-login';
 				return;
 			}
@@ -1290,6 +1301,9 @@
 
 		function goToTarget() {
 			var target = sessionStorage.getItem(TARGET_KEY);
+			// After logging in on the login page, leave it even if there's no target URL.
+			if (!target && sessionStorage.getItem(LOGIN_FLOW_KEY)) target = 'https://www.hotstar.com/in';
+			sessionStorage.removeItem(LOGIN_FLOW_KEY);
 			if (!target) return;
 			sessionStorage.removeItem(TARGET_KEY);
 			if (location.href.split('#')[0] !== target) {
