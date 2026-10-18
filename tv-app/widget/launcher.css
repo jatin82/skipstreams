@@ -46,6 +46,15 @@ html, body {
 	border-radius: 50%;
 	animation: spin 1s linear infinite;
 }
-.spinner.hidden { display: none; }
-.error #status { color: #ff6b6b; }
+.spinner.hidden, .hidden { display: none; }
+.movie { text-align: left; width: 1100px; margin: 0 auto; }
+.movie h2 { margin: 0 0 20px; font-size: 44px; }
+.movie-list { max-height: 560px; overflow: hidden; }
+.movie-item {
+	padding: 16px 24px; margin-bottom: 14px; border: 4px solid #333; border-radius: 12px; background: #1b2530;
+}
+.movie-item.sel { border-color: #00a8e1; background: #213445; box-shadow: 0 0 0 4px rgba(0, 168, 225, .35); }
+.movie-title { font-size: 34px; font-weight: bold; }
+.movie-url { font-size: 20px; color: #8197a4; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.movie-error { color: #ff6b6b; font-size: 26px; margin-bottom: 16px; }.error #status { color: #ff6b6b; }
 @keyframes spin { to { transform: rotate(360deg); } }

@@ -47,6 +47,21 @@ npm run watch             # launches the app on the TV with ad skipping; keep it
 The console shows injection events and the script's `[PrimeTizen]` logs from the TV.
 When you exit the app on the TV, the companion stops too.
 
+### Movie list
+
+Both apps start with a **Which movie?** list loaded from
+`https://edrive.blackmushroom-4418eafb.southindia.azurecontainerapps.io/public/download/tizenMoviesToPlay.json?parent=tizenMovie`
+(`MOVIES_URL` in `widget*/launcher.js`):
+
+```json
+{ "jioHotstar": ["https://www.hotstar.com/in/movies/<name>/<id>/watch"], "amazonPrime": ["https://www.primevideo.com/..."] }
+```
+
+Pick with Up/Down and OK; the chosen URL opens directly, so the site's home page never loads.
+"Home page" opens the home page instead, and Back exits. Titles come from the URL
+(`/movies/<name>/` or `/detail/<name>/`); other URLs show as "Movie N". The list is fetched fresh at each
+launch, so editing the JSON file is enough. A URL passed to the companion skips the list.
+
 If you open the app from the TV's app list without the companion, it shows "Waiting for PC companion…".
 Press **OK** to open Prime Video without ad skipping and without the cursor, or **BACK** to exit.
 
@@ -54,16 +69,13 @@ Press **OK** to open Prime Video without ad skipping and without the cursor, or 
 
 ```powershell
 npm run install-hotstar                              # one time
-npm run hotstar                                      # the TV asks which movie
+npm run hotstar                                      # the TV shows the movie list
 node companion.js hotstar superman/1271509950        # = https://www.hotstar.com/in/movies/superman/1271509950/watch
 node companion.js hotstar https://www.hotstar.com/in/...   # any full URL also works
 ```
 
-- Without a movie, the app's start screen asks **Which movie?** on the TV: pick a field with Up/Down,
-  press OK to type with the remote's keyboard (spaces become dashes), then Play. It opens
-  `https://www.hotstar.com/in/movies/<movie_name>/<movie_number>/watch` directly, so the Hotstar home
-  page never loads. "Hotstar home" opens the home page instead; Back exits. The last movie is prefilled.
-  On a Hotstar page, Green asks again.
+- Without a movie, the TV shows the `jioHotstar` [movie list](#movie-list). On a Hotstar page, Green
+  shows the list again ("Stay here" or Back closes it).
 - Opens the given URL directly. If you aren't logged in, it opens
   `https://www.hotstar.com/in/mypage#mp-login` first and returns to the URL after you log in.
 - Picks the **Jatin** profile on the "Who's watching?" page (`PROFILE_NAME` in `userScript.js`).

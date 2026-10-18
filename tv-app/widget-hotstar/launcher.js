@@ -2,6 +2,10 @@
 	'use strict';
 
 	var SITE_URL = document.documentElement.getAttribute('data-url') || 'https://www.primevideo.com/';
+	// Key in the movie list JSON for this app ("jioHotstar" or "amazonPrime").
+	var LIST_KEY = document.documentElement.getAttribute('data-list') || 'amazonPrime';
+	var MOVIES_URL = 'https://edrive.blackmushroom-4418eafb.southindia.azurecontainerapps.io' +
+		'/public/download/tizenMoviesToPlay.json?parent=tizenMovie';
 	// The Tizen default UA can make Prime serve an "unsupported browser"/app-store page.
 	// Set to '' to keep the TV's own user agent.
 	var USER_AGENT =
@@ -11,6 +15,8 @@
 	var LAUNCHED_FLAG = 'primeTizenNavigated';
 	var KEY_ENTER = 13;
 	var KEY_BACK = 10009;
+	var KEY_UP = 38;
+	var KEY_DOWN = 40;
 
 	var statusEl = document.getElementById('status');
 	var hintEl = document.getElementById('hint');
@@ -21,7 +27,7 @@
 		try { tizen.application.getCurrentApplication().exit(); } catch (e) { window.close(); }
 	}
 
-	// Coming "back" from Prime to this page means the user wants to leave the app.
+	// Coming "back" from the site to this page means the user wants to leave the app.
 	if (sessionStorage.getItem(LAUNCHED_FLAG)) {
 		sessionStorage.removeItem(LAUNCHED_FLAG);
 		exitApp();
@@ -35,6 +41,7 @@
 	} catch (e) { /* not on a TV */ }
 
 	function navigate(url, withAdSkip) {
+		spinnerEl.className = 'spinner';
 		statusEl.textContent = withAdSkip ? 'Opening…' : 'Opening (without the PC companion)…';
 		hintEl.textContent = '';
 		try {
@@ -47,114 +54,105 @@
 	function openPrime(withAdSkip, url) {
 		if (started) return;
 		started = true;
-		// No movie given: ask here, then open the movie page directly (the site's home page never loads).
-		if (withAdSkip && !url && document.getElementById('movie')) return MovieForm.open();
+		// No movie given: let the user pick one from the online list, then open it directly
+		// (the site's home page never loads).
+		if (withAdSkip && !url && document.getElementById('movie')) return MovieList.open();
 		navigate(url, withAdSkip);
 	}
 
-	var MovieForm = (function () {
-		var LAST_KEY = 'ptHotstarLastMovie';
-		var KEY_UP = 38, KEY_DOWN = 40, KEY_LEFT = 37, KEY_RIGHT = 39;
-		var KEY_DONE = 65376, KEY_CANCEL = 65385;
-		var root, nameInput, numberInput, urlEl, errorEl, items, sel = 0;
+	var MovieList = (function () {
+		var root, items = [], sel = 0;
 
-		function slug(s) {
-			return String(s || '').trim().toLowerCase().replace(/\s+/g, '-');
+		function titleCase(s) {
+			return s.replace(/[-_]+/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 		}
 
-		function updateUrl() {
-			var raw = nameInput.value.trim();
-			urlEl.textContent = /^https?:\/\//i.test(raw) ? raw : 'hotstar.com/in/movies/' +
-				(slug(raw) || '<movie_name>') + '/' + (numberInput.value.trim() || '<movie_number>') + '/watch';
+		// Readable name from the URL: /movies/<name>/<id>/watch (Hotstar) or /detail/<name>/<id> (Prime).
+		function titleOf(url, i) {
+			var m = /\/movies\/([^/?#]+)\/\d+/.exec(url) || /\/detail\/([^/?#]+)\/[^/?#]+/.exec(url);
+			if (m) {
+				try { return titleCase(decodeURIComponent(m[1])); } catch (e) { return titleCase(m[1]); }
+			}
+			return 'Movie ' + (i + 1);
+		}
+
+		function el(tag, cls, text) {
+			var node = document.createElement(tag);
+			if (cls) node.className = cls;
+			if (text) node.textContent = text;
+			return node;
 		}
 
 		function select(i) {
+			if (!items.length) return;
 			sel = Math.max(0, Math.min(items.length - 1, i));
-			items.forEach(function (item, k) { item.className = k === sel ? 'sel' : ''; });
+			items.forEach(function (item, k) { item.className = 'movie-item' + (k === sel ? ' sel' : ''); });
+			if (items[sel].scrollIntoView) items[sel].scrollIntoView({ block: 'nearest' });
 		}
 
-		// OK on a field opens the TV keyboard; OK on a button presses it.
-		function activate() {
-			var item = items[sel];
-			if (item.tagName !== 'INPUT') return item.click();
-			item.blur();
-			item.focus();
-			var n = item.value.length;
-			try { item.setSelectionRange(n, n); } catch (e) { /* tel inputs may not support it */ }
+		function addItem(list, title, url) {
+			var item = el('div', 'movie-item');
+			item.appendChild(el('div', 'movie-title', title));
+			item.appendChild(el('div', 'movie-url', url.replace(/^https?:\/\/(www\.)?/, '').split('?')[0]));
+			item.addEventListener('click', function () { leave(url); });
+			list.appendChild(item);
+			items.push(item);
 		}
 
-		// Keyboard "Done": go on to the next field, then to Play.
-		function done() {
-			if (sel === 0) {
-				select(1);
-				activate();
-			} else {
-				if (document.activeElement) document.activeElement.blur();
-				select(2);
-			}
+		function render(urls, error) {
+			while (root.firstChild) root.removeChild(root.firstChild);
+			items = [];
+			root.appendChild(el('h2', '', 'Which movie?'));
+			if (error) root.appendChild(el('div', 'movie-error', error));
+			var list = el('div', 'movie-list');
+			urls.forEach(function (url, i) { addItem(list, titleOf(url, i), url); });
+			addItem(list, 'Home page', SITE_URL);
+			root.appendChild(list);
+			root.appendChild(el('div', 'hint', 'Up/Down: choose   OK: play   Back: exit'));
+			select(0);
 		}
 
-		function buildUrl() {
-			var raw = nameInput.value.trim();
-			if (/^https?:\/\//i.test(raw)) return raw;
-			var name = slug(raw);
-			var number = numberInput.value.replace(/\s+/g, '');
-			if (!name || !/^[a-z0-9-]+$/.test(name)) {
-				errorEl.textContent = 'Enter the movie name (letters, digits and dashes).';
-				select(0);
-				return null;
-			}
-			if (!/^\d+$/.test(number)) {
-				errorEl.textContent = 'Enter the movie number (digits only).';
-				select(1);
-				return null;
-			}
-			try { localStorage.setItem(LAST_KEY, JSON.stringify({ name: name, number: number })); } catch (e) { /* ignore */ }
-			return 'https://www.hotstar.com/in/movies/' + name + '/' + number + '/watch';
+		function load() {
+			spinnerEl.className = 'spinner';
+			statusEl.textContent = 'Loading movie list…';
+			var xhr = new XMLHttpRequest();
+			xhr.open('GET', MOVIES_URL + '&t=' + Date.now());
+			xhr.timeout = 15000;
+			xhr.onload = function () {
+				var urls = null;
+				try {
+					var data = JSON.parse(xhr.responseText);
+					urls = (data && data[LIST_KEY]) || [];
+				} catch (e) { /* bad JSON */ }
+				show(urls ? urls.filter(function (u) { return /^https?:\/\//i.test(u); }) : [],
+					urls ? (urls.length ? '' : 'No movies in the list.') : 'Could not read the movie list.');
+			};
+			xhr.onerror = xhr.ontimeout = function () { show([], 'Could not load the movie list.'); };
+			xhr.send();
+		}
+
+		function show(urls, error) {
+			spinnerEl.className = 'spinner hidden';
+			statusEl.textContent = '';
+			hintEl.textContent = '';
+			render(urls, error);
+			root.className = 'movie';
 		}
 
 		function leave(url) {
-			if (document.activeElement) document.activeElement.blur();
 			root.className = 'movie hidden';
 			window.removeEventListener('keydown', onKey, true);
 			navigate(url, true);
 		}
 
 		function onKey(e) {
-			var code = e.keyCode;
-			var active = document.activeElement;
-			var typing = !!active && active.tagName === 'INPUT';
 			var handled = true;
-			switch (code) {
-				case KEY_UP:
-					if (typing) active.blur();
-					select(sel >= 2 ? 1 : sel - 1);
-					break;
-				case KEY_DOWN:
-					if (typing) active.blur();
-					select(sel >= 2 ? sel : sel + 1);
-					break;
-				case KEY_LEFT:
-				case KEY_RIGHT:
-					if (typing) handled = false; // move the text cursor
-					else if (sel >= 2) select(code === KEY_LEFT ? 2 : 3);
-					break;
-				case KEY_ENTER:
-					if (typing) done();
-					else if (!e.repeat) activate();
-					break;
-				case KEY_DONE:
-					done();
-					break;
-				case KEY_CANCEL:
-					if (typing) active.blur();
-					break;
-				case KEY_BACK:
-					if (typing) active.blur();
-					else exitApp();
-					break;
-				default:
-					handled = false;
+			switch (e.keyCode) {
+				case KEY_UP: select(sel - 1); break;
+				case KEY_DOWN: select(sel + 1); break;
+				case KEY_ENTER: if (!e.repeat && items[sel]) items[sel].click(); break;
+				case KEY_BACK: exitApp(); break;
+				default: handled = false;
 			}
 			if (handled) {
 				e.preventDefault();
@@ -165,37 +163,8 @@
 		return {
 			open: function () {
 				root = document.getElementById('movie');
-				nameInput = document.getElementById('movie-name');
-				numberInput = document.getElementById('movie-number');
-				urlEl = document.getElementById('movie-url');
-				errorEl = document.getElementById('movie-error');
-				var playBtn = document.getElementById('movie-play');
-				var homeBtn = document.getElementById('movie-home');
-				items = [nameInput, numberInput, playBtn, homeBtn];
-				items.forEach(function (item, i) {
-					item.addEventListener('focus', function () { select(i); });
-				});
-				playBtn.addEventListener('click', function () {
-					var url = buildUrl();
-					if (url) leave(url);
-				});
-				homeBtn.addEventListener('click', function () { leave(SITE_URL); });
-				nameInput.addEventListener('input', updateUrl);
-				numberInput.addEventListener('input', updateUrl);
-				try {
-					var last = JSON.parse(localStorage.getItem(LAST_KEY) || 'null');
-					if (last) {
-						nameInput.value = last.name || '';
-						numberInput.value = last.number || '';
-					}
-				} catch (e) { /* ignore */ }
-				updateUrl();
-				spinnerEl.className = 'spinner hidden';
-				statusEl.textContent = '';
-				hintEl.textContent = '';
-				root.className = 'movie';
-				select(nameInput.value ? 2 : 0);
 				window.addEventListener('keydown', onKey, true);
+				load();
 			},
 		};
 	})();

@@ -1544,16 +1544,15 @@
 			MoviePrompt.maybeOpen();
 		}
 
-		/* On-TV "Which movie?" prompt, operated with the remote and the TV's on-screen keyboard. */
+		/* On-TV "Which movie?" list (loaded from MOVIES_URL), operated with the remote. */
 		var MoviePrompt = (function () {
 			var ASKED_KEY = 'ptHotstarAsked';
-			var LAST_KEY = 'ptHotstarLastMovie';
-			var KEY_DONE = 65376;
-			var KEY_CANCEL = 65385;
+			var MOVIES_URL = 'https://edrive.blackmushroom-4418eafb.southindia.azurecontainerapps.io' +
+				'/public/download/tizenMoviesToPlay.json?parent=tizenMovie';
+			var LIST_KEY = 'jioHotstar';
 			var root = null;
 			var items = [];
 			var sel = 0;
-			var nameInput, numberInput, urlEl, errorEl;
 
 			function el(tag, cls, text) {
 				var node = document.createElement(tag);
@@ -1568,132 +1567,69 @@
 				style.id = 'prime-tizen-movie-style';
 				style.textContent =
 					'#prime-tizen-movie{position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483645;' +
-					'background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;font-family:sans-serif;}' +
-					'#prime-tizen-movie .pt-box{background:#16181f;color:#fff;padding:40px 56px;border-radius:16px;width:960px;max-width:90vw;}' +
-					'#prime-tizen-movie h2{margin:0 0 10px;font-size:44px;}' +
-					'#prime-tizen-movie .pt-url{font-size:22px;color:#aaa;margin-bottom:26px;word-break:break-all;}' +
-					'#prime-tizen-movie label{display:block;font-size:24px;color:#bbb;}' +
-					'#prime-tizen-movie input{display:block;width:100%;box-sizing:border-box;font-size:34px;padding:14px 18px;' +
-					'margin:8px 0 22px;border:4px solid #444;border-radius:10px;background:#0c0d12;color:#fff;outline:none;}' +
-					'#prime-tizen-movie button{font-size:30px;padding:14px 40px;margin-right:24px;border:4px solid #444;' +
-					'border-radius:10px;background:#2a2d38;color:#fff;outline:none;}' +
-					'#prime-tizen-movie .pt-sel{border-color:#1f80e0;box-shadow:0 0 0 4px rgba(31,128,224,.45);}' +
-					'#prime-tizen-movie .pt-err{color:#ff6b6b;font-size:24px;min-height:32px;}' +
-					'#prime-tizen-movie .pt-hint{font-size:21px;color:#888;margin-top:26px;}';
+					'background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;font-family:sans-serif;}' +
+					'#prime-tizen-movie .pt-box{background:#16181f;color:#fff;padding:40px 56px;border-radius:16px;width:1100px;max-width:90vw;}' +
+					'#prime-tizen-movie h2{margin:0 0 20px;font-size:44px;}' +
+					'#prime-tizen-movie .pt-list{max-height:60vh;overflow:hidden;}' +
+					'#prime-tizen-movie .pt-item{padding:16px 24px;margin-bottom:14px;border:4px solid #333;border-radius:12px;background:#1f222b;}' +
+					'#prime-tizen-movie .pt-sel{border-color:#1f80e0;background:#22324a;box-shadow:0 0 0 4px rgba(31,128,224,.4);}' +
+					'#prime-tizen-movie .pt-title{font-size:34px;font-weight:bold;}' +
+					'#prime-tizen-movie .pt-url{font-size:20px;color:#999;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+					'#prime-tizen-movie .pt-err{color:#ff6b6b;font-size:26px;margin-bottom:16px;}' +
+					'#prime-tizen-movie .pt-hint{font-size:21px;color:#888;margin-top:20px;}';
 				(document.head || document.documentElement).appendChild(style);
 			}
 
-			function slug(s) {
-				return String(s || '').trim().toLowerCase().replace(/\s+/g, '-');
-			}
-
-			function updateUrl() {
-				urlEl.textContent = 'hotstar.com/in/movies/' + (slug(nameInput.value) || '<movie_name>') + '/' +
-					(numberInput.value.trim() || '<movie_number>') + '/watch';
-			}
-
-			function build() {
-				injectStyle();
-				root = el('div');
-				root.id = 'prime-tizen-movie';
-				var box = el('div', 'pt-box');
-				box.appendChild(el('h2', '', 'Which movie?'));
-				urlEl = el('div', 'pt-url');
-				box.appendChild(urlEl);
-				box.appendChild(el('label', '', 'Movie name'));
-				nameInput = el('input');
-				nameInput.type = 'text';
-				nameInput.placeholder = 'e.g. superman';
-				nameInput.setAttribute('autocomplete', 'off');
-				box.appendChild(nameInput);
-				box.appendChild(el('label', '', 'Movie number'));
-				numberInput = el('input');
-				numberInput.type = 'tel';
-				numberInput.setAttribute('inputmode', 'numeric');
-				numberInput.placeholder = 'e.g. 1271509950';
-				numberInput.setAttribute('autocomplete', 'off');
-				box.appendChild(numberInput);
-				errorEl = el('div', 'pt-err');
-				box.appendChild(errorEl);
-				var buttons = el('div');
-				var playBtn = el('button', '', 'Play');
-				var homeBtn = el('button', '', 'Hotstar home');
-				playBtn.type = homeBtn.type = 'button';
-				playBtn.addEventListener('click', play);
-				homeBtn.addEventListener('click', close);
-				buttons.appendChild(playBtn);
-				buttons.appendChild(homeBtn);
-				box.appendChild(buttons);
-				box.appendChild(el('div', 'pt-hint',
-					'Up/Down: move   OK: type or press   Back: close   Green: ask again'));
-				root.appendChild(box);
-				items = [nameInput, numberInput, playBtn, homeBtn];
-				items.forEach(function (item, i) {
-					item.addEventListener('focus', function () { select(i); });
-				});
-				nameInput.addEventListener('input', updateUrl);
-				numberInput.addEventListener('input', updateUrl);
-				try {
-					var last = JSON.parse(localStorage.getItem(LAST_KEY) || 'null');
-					if (last) {
-						nameInput.value = last.name || '';
-						numberInput.value = last.number || '';
-					}
-				} catch (e) { /* ignore */ }
-				updateUrl();
+			function titleOf(url, i) {
+				var m = /\/movies\/([^/?#]+)\/\d+/.exec(url);
+				if (!m) return 'Movie ' + (i + 1);
+				return decodeURIComponent(m[1]).replace(/[-_]+/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 			}
 
 			function select(i) {
+				if (!items.length) return;
 				sel = Math.max(0, Math.min(items.length - 1, i));
-				items.forEach(function (item, k) { item.classList.toggle('pt-sel', k === sel); });
+				items.forEach(function (item, k) { item.className = 'pt-item' + (k === sel ? ' pt-sel' : ''); });
+				if (items[sel].scrollIntoView) items[sel].scrollIntoView({ block: 'nearest' });
 			}
 
-			// OK on a field opens the TV keyboard; OK on a button presses it.
-			function activate() {
-				var item = items[sel];
-				if (item.tagName !== 'INPUT') {
-					item.click();
-					return;
-				}
-				item.blur();
-				item.focus();
-				var n = item.value.length;
-				try { item.setSelectionRange(n, n); } catch (e) { /* tel inputs may not support it */ }
+			function render(box, urls, error) {
+				while (box.firstChild) box.removeChild(box.firstChild);
+				items = [];
+				box.appendChild(el('h2', '', 'Which movie?'));
+				if (error) box.appendChild(el('div', 'pt-err', error));
+				var list = el('div', 'pt-list');
+				urls.forEach(function (url, i) {
+					var item = el('div', 'pt-item');
+					item.appendChild(el('div', 'pt-title', titleOf(url, i)));
+					item.appendChild(el('div', 'pt-url', url.replace(/^https?:\/\/(www\.)?/, '').split('?')[0]));
+					item.addEventListener('click', function () { play(url); });
+					list.appendChild(item);
+					items.push(item);
+				});
+				var home = el('div', 'pt-item');
+				home.appendChild(el('div', 'pt-title', 'Stay here'));
+				home.addEventListener('click', close);
+				list.appendChild(home);
+				items.push(home);
+				box.appendChild(list);
+				box.appendChild(el('div', 'pt-hint', 'Up/Down: choose   OK: play   Back: close   Green: show again'));
+				select(0);
 			}
 
-			// Keyboard "Done": go on to the next field, then to Play.
-			function done() {
-				if (sel === 0) {
-					select(1);
-					activate();
-				} else {
-					if (document.activeElement) document.activeElement.blur();
-					select(2);
-				}
+			function load(box) {
+				box.appendChild(el('h2', '', 'Loading movie list\u2026'));
+				fetch(MOVIES_URL + '&t=' + Date.now(), { cache: 'no-store' })
+					.then(function (r) { return r.json(); })
+					.then(function (data) {
+						if (!root) return;
+						var urls = ((data && data[LIST_KEY]) || []).filter(function (u) { return /^https?:\/\//i.test(u); });
+						render(box, urls, urls.length ? '' : 'No movies in the list.');
+					})
+					.catch(function () { if (root) render(box, [], 'Could not load the movie list.'); });
 			}
 
-			function buildUrl() {
-				var raw = nameInput.value.trim();
-				if (/^https?:\/\//i.test(raw)) return raw;
-				var name = slug(raw);
-				var number = numberInput.value.replace(/\s+/g, '');
-				if (!name || !/^[a-z0-9-]+$/.test(name)) {
-					errorEl.textContent = 'Enter the movie name (letters, digits and dashes).';
-					select(0);
-					return null;
-				}
-				if (!/^\d+$/.test(number)) {
-					errorEl.textContent = 'Enter the movie number (digits only).';
-					select(1);
-					return null;
-				}
-				localStorage.setItem(LAST_KEY, JSON.stringify({ name: name, number: number }));
-				return 'https://www.hotstar.com/in/movies/' + name + '/' + number + '/watch';
-			}
-
-			function play() {
-				var url = buildUrl();
-				if (!url) return;
+			function play(url) {
 				close();
 				sessionStorage.setItem(TARGET_KEY, url);
 				sessionStorage.removeItem(TARGET_TRIES_KEY);
@@ -1704,53 +1640,38 @@
 			function open() {
 				if (root || !document.body) return;
 				sessionStorage.setItem(ASKED_KEY, '1');
-				build();
+				injectStyle();
+				root = el('div');
+				root.id = 'prime-tizen-movie';
+				var box = el('div', 'pt-box');
+				root.appendChild(box);
 				document.body.appendChild(root);
-				select(nameInput.value ? 2 : 0);
+				items = [];
+				load(box);
 				log('Asking which movie to play');
 			}
 
 			function close() {
 				if (!root) return;
-				if (document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
 				root.remove();
 				root = null;
+				items = [];
 			}
 
 			function onKey(event) {
 				if (!root) return false;
-				var code = event.keyCode;
-				var active = document.activeElement;
-				var typing = !!active && active.tagName === 'INPUT' && root.contains(active);
-				switch (code) {
-					case KEY.UP:
-						if (typing) active.blur();
-						select(sel >= 2 ? 1 : sel - 1);
-						return true;
-					case KEY.DOWN:
-						if (typing) active.blur();
-						select(sel >= 2 ? sel : sel + 1);
-						return true;
+				switch (event.keyCode) {
+					case KEY.UP: select(sel - 1); return true;
+					case KEY.DOWN: select(sel + 1); return true;
 					case KEY.LEFT:
 					case KEY.RIGHT:
-						if (typing) return false; // move the text cursor
-						if (sel >= 2) select(code === KEY.LEFT ? 2 : 3);
+					case KEY.GREEN:
 						return true;
 					case KEY.ENTER:
-						if (typing) done();
-						else if (!event.repeat) activate();
-						return true;
-					case KEY_DONE:
-						done();
-						return true;
-					case KEY_CANCEL:
-						if (typing) active.blur();
+						if (!event.repeat && items[sel]) items[sel].click();
 						return true;
 					case KEY.BACK:
-						if (typing) active.blur();
-						else close();
-						return true;
-					case KEY.GREEN:
+						close();
 						return true;
 				}
 				return false;
