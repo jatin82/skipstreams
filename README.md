@@ -51,20 +51,33 @@ There are two ways to install it:
 - **Option A: Samsung app (`.wgt`) + PC companion**. See [tv-app/README.md](./tv-app/README.md).
   It installs as its own "Prime Video AdSkip" app, and Developer Mode keeps your real PC IP as Host PC IP.
   Ad skipping needs `npm run watch` running on the PC.
-- **Option B: TizenBrew module**. Follow the steps below.
+- **Option B: TizenBrew module (no PC needed)**. Follow the steps below.
 
-### TizenBrew module
+### TizenBrew module (no PC needed)
 
-1. **Install TizenBrew on the TV** by following the
-   [TizenBrew guide](https://github.com/reisxd/TizenBrew/blob/main/docs/README.md)
-   (enable Developer Mode on the TV, then install the TizenBrew `.wgt`).
-2. **Publish this module** using one of these options:
-   - GitHub: push this folder to a public repo, for example `github.com/<you>/prime-tizen`.
-   - npm: `npm publish`. Rename `name` in `package.json` first if it's already taken.
-3. On the TV, open **TizenBrew → Module Manager → Add module** and enter one of:
-   - `gh/<you>/prime-tizen` for GitHub
-   - `prime-tizen` for npm
-4. Launch **Prime Video (Ad Skip)** from TizenBrew and sign in.
+This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
+
+| Module | Add in TizenBrew as | Opens |
+|---|---|---|
+| Prime Video (Ad Skip) | `jatin82/skipstreams` | primevideo.com |
+| JioHotstar | `jatin82/skipstreams/hotstar` | hotstar.com/in (shows the login if you aren't logged in) |
+
+1. **Install TizenBrew on the TV** following the
+   [TizenBrew guide](https://github.com/reisxd/TizenBrew/blob/main/docs/README.md). With a Samsung
+   certificate that's already set up, re-sign and install the `.wgt` directly:
+   `tizen package -t wgt -s <profile> -o .\resigned -- TizenBrewStandalone.wgt`, then
+   `tizen install -n TizenBrewStandalone.wgt -s <TV-IP>:26101 -- .\resigned`.
+2. On the TV, open **Apps**, enter `12345` and set **Host PC IP** to `127.0.0.1`, then restart the TV.
+   TizenBrew needs this to inject scripts by itself. To install apps from the PC again, switch it back
+   to the PC's IP.
+3. Open **TizenBrew → Module Manager → Add GitHub module** and add each module from the table.
+4. If Prime Video shows an "unsupported browser" page, set a desktop Chrome user agent in TizenBrew's
+   **User-Agent settings**.
+
+`hotstar/userScript.js` is a copy of `userScript.js`. Copy it again before every push. jsDelivr caches
+GitHub files for up to 12 hours; to refresh sooner, open
+`https://purge.jsdelivr.net/gh/jatin82/skipstreams/userScript.js` (and the same for
+`hotstar/userScript.js`).
 
 ## Development
 
