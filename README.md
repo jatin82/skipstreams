@@ -51,8 +51,8 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 
 | Module | Add in TizenBrew as | Opens |
 |---|---|---|
-| Prime Video (Ad Skip) | `jatin82/skipstreams@main` | primevideo.com |
-| JioHotstar | `jatin82/skipstreams@main/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
+| Prime Video (Ad Skip) | `jatin82/skipstreams@v1.2.0` | primevideo.com |
+| JioHotstar | `jatin82/skipstreams@v1.2.0/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
 
 1. **Install TizenBrew on the TV** following the
    [TizenBrew guide](https://github.com/reisxd/TizenBrew/blob/main/docs/README.md). With a Samsung
@@ -70,8 +70,10 @@ When a module starts, it shows the same **Which movie?** list as the TV apps, lo
 JSON file. The site's home page stops loading. Pick a movie with Up/Down/OK, and Back while watching
 brings the list back. **Exit app** (or Back on the list) closes the app.
 
-Use the `@main` names. The plain `jatin82/skipstreams` address can stay stuck on an old cached
-version for a long time.
+Use the version-tag names (`@v1.2.0`). A tag never changes, so jsDelivr can't serve a stale copy. To
+update, remove the module and add it again with the new tag. `@main` works too, but jsDelivr can keep
+an old copy for up to 12 hours, and purges are rate-limited. The plain `jatin82/skipstreams` address
+can stay stuck on an old version for a long time.
 
 `hotstar/userScript.js` is a copy of `userScript.js`. Copy it again before every push. jsDelivr caches
 GitHub files for up to 12 hours; to refresh sooner, open
