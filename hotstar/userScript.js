@@ -82,6 +82,31 @@
 			return null;
 		}
 
+		var SIGNIN_KEY = 'primeTizenSignInAt';
+
+		// Signed out: Prime's header has a "Sign In" link (auth-redirect?signin=1&returnUrl=<this page>).
+		function signInLink() {
+			var links = document.querySelectorAll('a[href*="auth-redirect"][href*="signin=1"]');
+			for (var i = 0; i < links.length; i++) {
+				if (/^\s*sign\s*in\s*$/i.test(links[i].textContent)) return links[i];
+			}
+			return null;
+		}
+
+		// Open Amazon's sign-in page; afterwards it returns to this title, which then plays.
+		// Only once every 5 minutes, so skipping the sign-in doesn't loop.
+		function signInFirst() {
+			var link = signInLink();
+			if (!link) return false;
+			if (Date.now() - Number(sessionStorage.getItem(SIGNIN_KEY) || 0) < 300000) return false;
+			sessionStorage.setItem(SIGNIN_KEY, String(Date.now()));
+			var url = new URL(link.href);
+			url.searchParams.set('returnUrl', location.pathname + location.search);
+			log('Not signed in, opening', url.href);
+			location.href = url.href;
+			return true;
+		}
+
 		return {
 			// The launcher opens the picked title's detail page with a full page load: press its Play button.
 			start: function () {
@@ -89,6 +114,7 @@
 				var startedAt = Date.now();
 				var poll = setInterval(function () {
 					if (Date.now() - startedAt > GIVE_UP_MS) return clearInterval(poll);
+					if (document.readyState !== 'loading' && signInFirst()) return clearInterval(poll);
 					var button = findPlayButton();
 					if (!button) return;
 					clearInterval(poll);
