@@ -1,7 +1,7 @@
 {
   "name": "jiohotstar-tizenbrew",
   "appName": "JioHotstar",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "TizenBrew site-modification module: JioHotstar on Samsung Tizen TVs with a remote cursor, login prompt and remote seeking.",
   "packageType": "mods",
   "websiteURL": "https://www.hotstar.com/in",
