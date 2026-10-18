@@ -6,7 +6,7 @@
  *
  *   npm run watch                              Prime Video
  *   node companion.js hotstar [url]            JioHotstar, optionally opening a page (logs in first if needed)
- *                                              Without a url it asks for the movie name and number.
+ *                                              Without a url the TV asks for the movie name and number.
  *   TV_IP=192.168.29.51 npm run watch
  *
  * Env: TV_IP, SDB (path to sdb), APP_ID (overrides the app id)
@@ -22,7 +22,7 @@ const APPS = {
 	hotstar: 'HotstarT01.JioHotstar',
 };
 const APP_NAME = process.argv[2] && APPS[process.argv[2]] ? process.argv[2] : 'prime';
-let TARGET_URL = resolveTarget(process.argv.slice(2).filter((a) => !APPS[a])[0] || '');
+const TARGET_URL = resolveTarget(process.argv.slice(2).filter((a) => !APPS[a])[0] || '');
 const APP_ID = process.env.APP_ID || APPS[APP_NAME];
 const SDB = process.env.SDB || 'sdb';
 const USER_SCRIPT_PATH = path.join(__dirname, '..', 'userScript.js');
@@ -38,30 +38,6 @@ function resolveTarget(arg) {
 		process.exit(1);
 	}
 	return 'https://www.hotstar.com/in/movies/' + m[1] + '/' + m[2] + '/watch';
-}
-
-// Hotstar without a movie argument: ask for the movie name and number in the terminal.
-async function askForMovie() {
-	if (!process.stdin.isTTY) return '';
-	const readline = require('readline');
-	const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-	const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a.trim())));
-	try {
-		console.log('Movie URL: https://www.hotstar.com/in/movies/<movie_name>/<movie_number>/watch');
-		for (;;) {
-			const name = (await ask('Movie name (e.g. superman, Enter for the home page): '))
-				.toLowerCase().replace(/\s+/g, '-');
-			if (!name) return '';
-			if (/^https?:\/\//i.test(name)) return name;
-			const number = await ask('Movie number (e.g. 1271509950): ');
-			if (/^[a-z0-9-]+$/.test(name) && /^\d+$/.test(number)) {
-				return 'https://www.hotstar.com/in/movies/' + name + '/' + number + '/watch';
-			}
-			console.log('The name may only contain letters, digits and dashes, and the number only digits. Try again.');
-		}
-	} finally {
-		rl.close();
-	}
 }
 
 function log() {
@@ -104,8 +80,6 @@ function shouldInject(context) {
 }
 
 async function main() {
-	if (APP_NAME === 'hotstar' && !TARGET_URL) TARGET_URL = await askForMovie();
-
 	const serial = resolveSerial();
 	log('TV:', serial);
 

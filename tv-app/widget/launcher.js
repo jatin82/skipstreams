@@ -7,7 +7,7 @@
 	var USER_AGENT =
 		'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 	var KEYS = ['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
-		'MediaFastForward', 'MediaRewind', 'ColorF0Red'];
+		'MediaFastForward', 'MediaRewind', 'ColorF0Red', 'ColorF1Green'];
 	var LAUNCHED_FLAG = 'primeTizenNavigated';
 	var KEY_ENTER = 13;
 	var KEY_BACK = 10009;

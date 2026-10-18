@@ -1150,6 +1150,12 @@
 		var code = event.keyCode;
 		var handled = false;
 
+		if (!IS_PRIME && Hotstar.onKey(event)) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
+
 		switch (code) {
 			case KEY.RED:
 				Pointer.toggle();
@@ -1157,6 +1163,7 @@
 				break;
 			case KEY.GREEN:
 				if (IS_PRIME) WatchOnly.toggle();
+				else Hotstar.askMovie();
 				handled = true;
 				break;
 			case KEY.BACK:
@@ -1534,14 +1541,246 @@
 				return;
 			}
 			goToTarget();
+			MoviePrompt.maybeOpen();
 		}
+
+		/* On-TV "Which movie?" prompt, operated with the remote and the TV's on-screen keyboard. */
+		var MoviePrompt = (function () {
+			var ASKED_KEY = 'ptHotstarAsked';
+			var LAST_KEY = 'ptHotstarLastMovie';
+			var KEY_DONE = 65376;
+			var KEY_CANCEL = 65385;
+			var root = null;
+			var items = [];
+			var sel = 0;
+			var nameInput, numberInput, urlEl, errorEl;
+
+			function el(tag, cls, text) {
+				var node = document.createElement(tag);
+				if (cls) node.className = cls;
+				if (text) node.textContent = text;
+				return node;
+			}
+
+			function injectStyle() {
+				if (document.getElementById('prime-tizen-movie-style')) return;
+				var style = el('style');
+				style.id = 'prime-tizen-movie-style';
+				style.textContent =
+					'#prime-tizen-movie{position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483645;' +
+					'background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;font-family:sans-serif;}' +
+					'#prime-tizen-movie .pt-box{background:#16181f;color:#fff;padding:40px 56px;border-radius:16px;width:960px;max-width:90vw;}' +
+					'#prime-tizen-movie h2{margin:0 0 10px;font-size:44px;}' +
+					'#prime-tizen-movie .pt-url{font-size:22px;color:#aaa;margin-bottom:26px;word-break:break-all;}' +
+					'#prime-tizen-movie label{display:block;font-size:24px;color:#bbb;}' +
+					'#prime-tizen-movie input{display:block;width:100%;box-sizing:border-box;font-size:34px;padding:14px 18px;' +
+					'margin:8px 0 22px;border:4px solid #444;border-radius:10px;background:#0c0d12;color:#fff;outline:none;}' +
+					'#prime-tizen-movie button{font-size:30px;padding:14px 40px;margin-right:24px;border:4px solid #444;' +
+					'border-radius:10px;background:#2a2d38;color:#fff;outline:none;}' +
+					'#prime-tizen-movie .pt-sel{border-color:#1f80e0;box-shadow:0 0 0 4px rgba(31,128,224,.45);}' +
+					'#prime-tizen-movie .pt-err{color:#ff6b6b;font-size:24px;min-height:32px;}' +
+					'#prime-tizen-movie .pt-hint{font-size:21px;color:#888;margin-top:26px;}';
+				(document.head || document.documentElement).appendChild(style);
+			}
+
+			function slug(s) {
+				return String(s || '').trim().toLowerCase().replace(/\s+/g, '-');
+			}
+
+			function updateUrl() {
+				urlEl.textContent = 'hotstar.com/in/movies/' + (slug(nameInput.value) || '<movie_name>') + '/' +
+					(numberInput.value.trim() || '<movie_number>') + '/watch';
+			}
+
+			function build() {
+				injectStyle();
+				root = el('div');
+				root.id = 'prime-tizen-movie';
+				var box = el('div', 'pt-box');
+				box.appendChild(el('h2', '', 'Which movie?'));
+				urlEl = el('div', 'pt-url');
+				box.appendChild(urlEl);
+				box.appendChild(el('label', '', 'Movie name'));
+				nameInput = el('input');
+				nameInput.type = 'text';
+				nameInput.placeholder = 'e.g. superman';
+				nameInput.setAttribute('autocomplete', 'off');
+				box.appendChild(nameInput);
+				box.appendChild(el('label', '', 'Movie number'));
+				numberInput = el('input');
+				numberInput.type = 'tel';
+				numberInput.setAttribute('inputmode', 'numeric');
+				numberInput.placeholder = 'e.g. 1271509950';
+				numberInput.setAttribute('autocomplete', 'off');
+				box.appendChild(numberInput);
+				errorEl = el('div', 'pt-err');
+				box.appendChild(errorEl);
+				var buttons = el('div');
+				var playBtn = el('button', '', 'Play');
+				var homeBtn = el('button', '', 'Hotstar home');
+				playBtn.type = homeBtn.type = 'button';
+				playBtn.addEventListener('click', play);
+				homeBtn.addEventListener('click', close);
+				buttons.appendChild(playBtn);
+				buttons.appendChild(homeBtn);
+				box.appendChild(buttons);
+				box.appendChild(el('div', 'pt-hint',
+					'Up/Down: move   OK: type or press   Back: close   Green: ask again'));
+				root.appendChild(box);
+				items = [nameInput, numberInput, playBtn, homeBtn];
+				items.forEach(function (item, i) {
+					item.addEventListener('focus', function () { select(i); });
+				});
+				nameInput.addEventListener('input', updateUrl);
+				numberInput.addEventListener('input', updateUrl);
+				try {
+					var last = JSON.parse(localStorage.getItem(LAST_KEY) || 'null');
+					if (last) {
+						nameInput.value = last.name || '';
+						numberInput.value = last.number || '';
+					}
+				} catch (e) { /* ignore */ }
+				updateUrl();
+			}
+
+			function select(i) {
+				sel = Math.max(0, Math.min(items.length - 1, i));
+				items.forEach(function (item, k) { item.classList.toggle('pt-sel', k === sel); });
+			}
+
+			// OK on a field opens the TV keyboard; OK on a button presses it.
+			function activate() {
+				var item = items[sel];
+				if (item.tagName !== 'INPUT') {
+					item.click();
+					return;
+				}
+				item.blur();
+				item.focus();
+				var n = item.value.length;
+				try { item.setSelectionRange(n, n); } catch (e) { /* tel inputs may not support it */ }
+			}
+
+			// Keyboard "Done": go on to the next field, then to Play.
+			function done() {
+				if (sel === 0) {
+					select(1);
+					activate();
+				} else {
+					if (document.activeElement) document.activeElement.blur();
+					select(2);
+				}
+			}
+
+			function buildUrl() {
+				var raw = nameInput.value.trim();
+				if (/^https?:\/\//i.test(raw)) return raw;
+				var name = slug(raw);
+				var number = numberInput.value.replace(/\s+/g, '');
+				if (!name || !/^[a-z0-9-]+$/.test(name)) {
+					errorEl.textContent = 'Enter the movie name (letters, digits and dashes).';
+					select(0);
+					return null;
+				}
+				if (!/^\d+$/.test(number)) {
+					errorEl.textContent = 'Enter the movie number (digits only).';
+					select(1);
+					return null;
+				}
+				localStorage.setItem(LAST_KEY, JSON.stringify({ name: name, number: number }));
+				return 'https://www.hotstar.com/in/movies/' + name + '/' + number + '/watch';
+			}
+
+			function play() {
+				var url = buildUrl();
+				if (!url) return;
+				close();
+				sessionStorage.setItem(TARGET_KEY, url);
+				sessionStorage.removeItem(TARGET_TRIES_KEY);
+				targetOpenedAt = 0;
+				goToTarget();
+			}
+
+			function open() {
+				if (root || !document.body) return;
+				sessionStorage.setItem(ASKED_KEY, '1');
+				build();
+				document.body.appendChild(root);
+				select(nameInput.value ? 2 : 0);
+				log('Asking which movie to play');
+			}
+
+			function close() {
+				if (!root) return;
+				if (document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
+				root.remove();
+				root = null;
+			}
+
+			function onKey(event) {
+				if (!root) return false;
+				var code = event.keyCode;
+				var active = document.activeElement;
+				var typing = !!active && active.tagName === 'INPUT' && root.contains(active);
+				switch (code) {
+					case KEY.UP:
+						if (typing) active.blur();
+						select(sel >= 2 ? 1 : sel - 1);
+						return true;
+					case KEY.DOWN:
+						if (typing) active.blur();
+						select(sel >= 2 ? sel : sel + 1);
+						return true;
+					case KEY.LEFT:
+					case KEY.RIGHT:
+						if (typing) return false; // move the text cursor
+						if (sel >= 2) select(code === KEY.LEFT ? 2 : 3);
+						return true;
+					case KEY.ENTER:
+						if (typing) done();
+						else if (!event.repeat) activate();
+						return true;
+					case KEY_DONE:
+						done();
+						return true;
+					case KEY_CANCEL:
+						if (typing) active.blur();
+						return true;
+					case KEY.BACK:
+						if (typing) active.blur();
+						else close();
+						return true;
+					case KEY.GREEN:
+						return true;
+				}
+				return false;
+			}
+
+			return {
+				open: open,
+				onKey: onKey,
+				isOpen: function () { return !!root; },
+				// Ask once per app launch when no movie was given and nothing is playing.
+				maybeOpen: function () {
+					if (root || sessionStorage.getItem(ASKED_KEY) || sessionStorage.getItem(TARGET_KEY)) return;
+					if (/\/watch\b/.test(location.pathname) || /\/mypage/.test(location.pathname)) return;
+					open();
+				},
+				markAsked: function () { sessionStorage.setItem(ASKED_KEY, '1'); },
+			};
+		})();
 
 		return {
 			start: function () {
 				// The companion passes the URL to open; remember it once per app launch.
-				if (window.__ptTargetUrl && !sessionStorage.getItem(SEEN_KEY)) {
+				// With the companion, the launcher asks which movie and opens it directly; that first
+				// page is the target to come back to after login/profile selection.
+				if (window.__ptTargetUrl !== undefined && !sessionStorage.getItem(SEEN_KEY)) {
 					sessionStorage.setItem(SEEN_KEY, '1');
-					sessionStorage.setItem(TARGET_KEY, window.__ptTargetUrl);
+					var first = window.__ptTargetUrl ||
+						(/\/watch\b/.test(location.pathname) ? location.href.split('#')[0] : '');
+					if (first) sessionStorage.setItem(TARGET_KEY, first);
+					MoviePrompt.markAsked();
 				}
 				blockImages();
 				onReady(function () {
@@ -1552,6 +1791,8 @@
 					setInterval(ensureSound, 1000);
 				});
 			},
+			onKey: function (event) { return MoviePrompt.onKey(event); },
+			askMovie: function () { MoviePrompt.open(); },
 		};
 	})();
 

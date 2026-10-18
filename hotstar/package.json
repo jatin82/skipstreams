@@ -13,7 +13,8 @@
     "MediaStop",
     "MediaFastForward",
     "MediaRewind",
-    "ColorF0Red"
+    "ColorF0Red",
+    "ColorF1Green"
   ],
   "files": [
     "userScript.js"
