@@ -66,6 +66,10 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 4. If Prime Video shows an "unsupported browser" page, set a desktop Chrome user agent in TizenBrew's
    **User-Agent settings**.
 
+When a module starts, it shows the same **Which movie?** list as the TV apps, loaded from the online
+JSON file. The site's home page stops loading. Pick a movie with Up/Down/OK, and Back while watching
+brings the list back. **Exit app** (or Back on the list) closes the app.
+
 Use the `@main` names. The plain `jatin82/skipstreams` address can stay stuck on an old cached
 version for a long time.
 

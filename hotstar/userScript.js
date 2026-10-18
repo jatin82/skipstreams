@@ -22,10 +22,23 @@
 
 	// The same script runs in the Prime Video and JioHotstar apps; Prime-only features are gated on this.
 	var IS_PRIME = !/(^|\.)hotstar\.com$/i.test(location.hostname);
+	// The PC companion sets __ptTargetUrl before injecting; TizenBrew doesn't.
+	var WITH_COMPANION = window.__ptTargetUrl !== undefined;
 
 	function onReady(fn) {
 		if (document.body) fn();
 		else document.addEventListener('DOMContentLoaded', fn, { once: true });
+	}
+
+	// Injected at document-start, <html> may not exist yet.
+	function whenRoot(fn) {
+		if (document.documentElement) return fn();
+		var obs = new MutationObserver(function () {
+			if (!document.documentElement) return;
+			obs.disconnect();
+			fn();
+		});
+		obs.observe(document, { childList: true });
 	}
 
 	function normalizeLabel(value) {
@@ -779,10 +792,15 @@
 	}
 
 	// Back while watching returns to the app's movie list. The PC companion navigates there when it sees
-	// "Show movie list"; fallback: walk history back to the launcher page.
+	// "Show movie list"; fallback: walk history back to the launcher page. Without the companion
+	// (TizenBrew), the list is shown in the page itself.
 	function showMovieList() {
 		var video = getMainVideo();
 		if (video) video.pause();
+		if (!WITH_COMPANION) {
+			PagePicker.open();
+			return;
+		}
 		log('Show movie list');
 		var from = location.href;
 		setTimeout(function () {
@@ -943,6 +961,13 @@
 		if (!event.isTrusted) return;
 		var code = event.keyCode;
 		var handled = false;
+
+		if (PagePicker.isOpen()) {
+			PagePicker.key(code, event.repeat);
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			return;
+		}
 
 		switch (code) {
 			case KEY.RED:
@@ -1269,6 +1294,7 @@
 		}
 
 		function check() {
+			if (PagePicker.isOpen()) return;
 			var state = loginState();
 			if (!state) return;
 			if (state === 'GUEST') {
@@ -1307,12 +1333,153 @@
 	})();
 
 	/* ------------------------------------------------------------------ */
+	/* Movie list inside the page (TizenBrew: no launcher page/companion)  */
+	/* ------------------------------------------------------------------ */
+
+	var PagePicker = (function () {
+		var MOVIES_URL = 'https://edrive.blackmushroom-4418eafb.southindia.azurecontainerapps.io' +
+			'/public/download/tizenMoviesToPlay.json?parent=tizenMovie';
+		var LIST_KEY = IS_PRIME ? 'amazonPrime' : 'jioHotstar';
+		var PICKED_KEY = 'ptPickerDone';
+		var root = null, items = [], urls = [], sel = 0;
+
+		function titleCase(s) {
+			return s.replace(/[-_]+/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+		}
+
+		function titleOf(url, i) {
+			var m = /\/movies\/([^/?#]+)\/\d+/.exec(url) || /\/detail\/([^/?#]+)\/[^/?#]+/.exec(url);
+			if (m) {
+				try { return titleCase(decodeURIComponent(m[1])); } catch (e) { return titleCase(m[1]); }
+			}
+			return 'Movie ' + (i + 1);
+		}
+
+		function exitApp() {
+			try { tizen.application.getCurrentApplication().exit(); } catch (e) { window.close(); }
+		}
+
+		function el(tag, css, text) {
+			var node = document.createElement(tag);
+			if (css) node.style.cssText = css;
+			if (text) node.textContent = text;
+			return node;
+		}
+
+		function select(i) {
+			if (!items.length) return;
+			sel = Math.max(0, Math.min(items.length - 1, i));
+			items.forEach(function (item, k) {
+				item.style.background = k === sel ? '#1a98ff' : 'rgba(255,255,255,.08)';
+			});
+			if (items[sel].scrollIntoView) items[sel].scrollIntoView({ block: 'nearest' });
+		}
+
+		function render(message) {
+			while (root.firstChild) root.removeChild(root.firstChild);
+			items = [];
+			root.appendChild(el('h2', 'margin:0 0 30px;font-size:52px;', 'Which movie?'));
+			if (message) root.appendChild(el('div', 'margin-bottom:20px;color:#ffb3b3;font-size:28px;', message));
+			var list = el('div', 'width:1100px;max-width:90%;max-height:60%;overflow:hidden;');
+			urls.concat(['']).forEach(function (url, i) {
+				var item = el('div', 'margin:10px 0;padding:18px 30px;border-radius:12px;');
+				item.appendChild(el('div', 'font-size:36px;font-weight:bold;', url ? titleOf(url, i) : 'Exit app'));
+				if (url) {
+					item.appendChild(el('div', 'font-size:20px;opacity:.6;margin-top:6px;white-space:nowrap;' +
+						'overflow:hidden;text-overflow:ellipsis;', url.replace(/^https?:\/\/(www\.)?/, '').split('?')[0]));
+				} else {
+					item.style.opacity = '.85';
+				}
+				list.appendChild(item);
+				items.push(item);
+			});
+			root.appendChild(list);
+			root.appendChild(el('div', 'margin-top:30px;font-size:24px;opacity:.7;',
+				'Up/Down: choose   OK: select   Back: exit'));
+			select(0);
+		}
+
+		function load() {
+			urls = [];
+			render('Loading movie list\u2026');
+			var xhr = new XMLHttpRequest();
+			xhr.open('GET', MOVIES_URL + '&t=' + Date.now());
+			xhr.timeout = 15000;
+			xhr.onload = function () {
+				var list = null;
+				try {
+					var data = JSON.parse(xhr.responseText);
+					list = (data && data[LIST_KEY]) || [];
+				} catch (e) { /* bad JSON */ }
+				urls = (list || []).filter(function (u) { return /^https?:\/\//i.test(u); });
+				if (root) render(list ? (urls.length ? '' : 'No movies in the list.') : 'Could not read the movie list.');
+			};
+			xhr.onerror = xhr.ontimeout = function () { if (root) render('Could not load the movie list.'); };
+			xhr.send();
+		}
+
+		function choose() {
+			var url = urls[sel];
+			if (!url) return exitApp();
+			log('Picked', url);
+			sessionStorage.setItem(PICKED_KEY, '1');
+			// Hotstar: come back to this movie after login / profile selection.
+			if (!IS_PRIME) {
+				sessionStorage.setItem('ptHotstarTarget', url);
+				sessionStorage.setItem('ptHotstarTargetSeen', '1');
+				sessionStorage.removeItem('ptHotstarTargetTries');
+			}
+			close();
+			location.href = url;
+		}
+
+		function close() {
+			if (root) root.remove();
+			root = null;
+		}
+
+		function open() {
+			if (root) return;
+			var mount = function () {
+				if (root) return;
+				root = el('div', 'position:fixed;inset:0;z-index:2147483646;background:#0f171e;color:#fff;' +
+					'font-family:sans-serif;display:flex;flex-direction:column;align-items:center;' +
+					'justify-content:center;');
+				root.id = 'prime-tizen-movie-list';
+				document.documentElement.appendChild(root);
+				load();
+			};
+			whenRoot(mount);
+		}
+
+		return {
+			isOpen: function () { return !!root; },
+			// First page of a TizenBrew launch: ask which movie before the site's home page loads.
+			startIfNeeded: function () {
+				if (WITH_COMPANION || sessionStorage.getItem(PICKED_KEY)) return;
+				try { window.stop(); } catch (e) { /* keep loading */ }
+				open();
+			},
+			open: open,
+			key: function (code, repeat) {
+				if (code === KEY.UP) select(sel - 1);
+				else if (code === KEY.DOWN) select(sel + 1);
+				else if (code === KEY.ENTER && !repeat) choose();
+				else if (code === KEY.BACK) exitApp();
+			},
+		};
+	})();
+
+	/* ------------------------------------------------------------------ */
 	/* Boot                                                                */
 	/* ------------------------------------------------------------------ */
 
 	registerKeys();
-	disableAnimations();
-	blockImages();
+	whenRoot(function () {
+		disableAnimations();
+		blockImages();
+		PagePicker.startIfNeeded();
+	});
 	if (IS_PRIME) {
 		blockTrailerAutoplay();
 		AutoPlay.start();
