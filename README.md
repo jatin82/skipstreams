@@ -59,8 +59,8 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 
 | Module | Add in TizenBrew as | Opens |
 |---|---|---|
-| Prime Video (Ad Skip) | `jatin82/skipstreams` | primevideo.com |
-| JioHotstar | `jatin82/skipstreams/hotstar` | hotstar.com/in (shows the login if you aren't logged in) |
+| Prime Video (Ad Skip) | `jatin82/skipstreams@main` | primevideo.com |
+| JioHotstar | `jatin82/skipstreams@main/hotstar` | hotstar.com/in (shows the login if you aren't logged in) |
 
 1. **Install TizenBrew on the TV** following the
    [TizenBrew guide](https://github.com/reisxd/TizenBrew/blob/main/docs/README.md). With a Samsung
@@ -74,10 +74,13 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 4. If Prime Video shows an "unsupported browser" page, set a desktop Chrome user agent in TizenBrew's
    **User-Agent settings**.
 
+Use the `@main` names. The plain `jatin82/skipstreams` address can stay stuck on an old cached
+version for a long time.
+
 `hotstar/userScript.js` is a copy of `userScript.js`. Copy it again before every push. jsDelivr caches
 GitHub files for up to 12 hours; to refresh sooner, open
-`https://purge.jsdelivr.net/gh/jatin82/skipstreams/userScript.js` (and the same for
-`hotstar/userScript.js`).
+`https://purge.jsdelivr.net/gh/jatin82/skipstreams@main/<file>` for `package.json`, `userScript.js`,
+`hotstar/package.json` and `hotstar/userScript.js`.
 
 ## Development
 
