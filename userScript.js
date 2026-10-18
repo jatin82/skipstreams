@@ -58,176 +58,10 @@
 	}
 
 	/* ------------------------------------------------------------------ */
-	/* Watch-only home: keep just the "Continue watching" row             */
+	/* Prime: the chosen title's detail page starts playback by itself     */
 	/* ------------------------------------------------------------------ */
 
-	var WatchOnly = (function () {
-		var LANDING = 'main[data-testid="landingpage"]';
-		var PLAYER = '#dv-web-player';
-		var CONTINUE_RE = /continue watching|resume watching/i;
-		var enabled = true;
-		var markQueued = false;
-		var notice = null;
-
-		function injectStyle() {
-			var style = document.createElement('style');
-			style.id = 'prime-tizen-watch-only';
-			// display:none keeps hidden rows from painting, lazy-loading images, or paginating more rows.
-			style.textContent =
-				'html.pt-watch-only ' + LANDING + ' [data-testid="top-hero"],' +
-				'html.pt-watch-only ' + LANDING + ' [data-testid="navigation-carousel-wrapper"]:not(.pt-keep),' +
-				'html.pt-watch-only ' + LANDING + ' [data-testid="page-pagination-marker"],' +
-				'html.pt-watch-only ' + LANDING + ' .pt-hide,' +
-				'html.pt-watch-only [data-testid="DVWebNode-sitewide-footer-wrapper"]' +
-				'{display:none!important;}' +
-				'html.pt-watch-only ' + LANDING + '{padding-top:96px;}' +
-				'#prime-tizen-notice,#prime-tizen-startup{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);' +
-				'z-index:2147483646;padding:24px 36px;border-radius:12px;background:rgba(0,0,0,.85);' +
-				'color:#fff;font:24px/1.4 sans-serif;text-align:center;white-space:pre-line;pointer-events:none;display:none;}' +
-				'#prime-tizen-startup{display:block;}' +
-				// Minimal detail ("resume") page: no artwork, posters, background art or trailers.
-				'html.pt-minimal-detail img:not(' + PLAYER + ' img),' +
-				'html.pt-minimal-detail picture:not(' + PLAYER + ' picture),' +
-				'html.pt-minimal-detail video:not(' + PLAYER + ' video)' +
-				'{display:none!important;}' +
-				'html.pt-minimal-detail body *:not(' + PLAYER + '):not(' + PLAYER + ' *),' +
-				'html.pt-minimal-detail body *:not(' + PLAYER + '):not(' + PLAYER + ' *)::before,' +
-				'html.pt-minimal-detail body *:not(' + PLAYER + '):not(' + PLAYER + ' *)::after' +
-				'{background-image:none!important;}';
-			(document.head || document.documentElement).appendChild(style);
-		}
-
-		function isDetailPage() {
-			return /\/detail\//.test(location.pathname);
-		}
-
-		function minimalDetail() {
-			return enabled && isDetailPage();
-		}
-
-		// display:none alone doesn't stop <img> downloads, so park the URLs while the page is minimal.
-		function stripImages(root) {
-			if (!root || root.nodeType !== 1) return;
-			var imgs = root.tagName === 'IMG' ? [root] : root.querySelectorAll('img[src], img[srcset], source[srcset]');
-			for (var i = 0; i < imgs.length; i++) {
-				var img = imgs[i];
-				if (img.closest(PLAYER)) continue;
-				if (img.hasAttribute('srcset')) {
-					img.setAttribute('data-pt-srcset', img.getAttribute('srcset'));
-					img.removeAttribute('srcset');
-				}
-				if (img.hasAttribute('src')) {
-					img.setAttribute('data-pt-src', img.getAttribute('src'));
-					img.removeAttribute('src');
-				}
-			}
-		}
-
-		function restoreImages() {
-			var imgs = document.querySelectorAll('[data-pt-src], [data-pt-srcset]');
-			for (var i = 0; i < imgs.length; i++) {
-				var img = imgs[i];
-				if (img.hasAttribute('data-pt-srcset')) img.setAttribute('srcset', img.getAttribute('data-pt-srcset'));
-				if (img.hasAttribute('data-pt-src')) img.setAttribute('src', img.getAttribute('data-pt-src'));
-				img.removeAttribute('data-pt-srcset');
-				img.removeAttribute('data-pt-src');
-			}
-		}
-
-		function onMutations(records) {
-			if (minimalDetail()) {
-				for (var i = 0; i < records.length; i++) {
-					var added = records[i].addedNodes;
-					for (var j = 0; j < added.length; j++) stripImages(added[j]);
-				}
-			}
-			queueMark();
-		}
-
-		function updateDetail() {
-			var minimal = minimalDetail();
-			document.documentElement.classList.toggle('pt-minimal-detail', minimal);
-			if (minimal) stripImages(document.body);
-		}
-
-		function isContinueRow(row) {
-			var title = row.querySelector('[data-testid="carousel-title"]');
-			if (title && CONTINUE_RE.test(title.textContent)) return true;
-			// Non-English UI: the continue-watching row is the one whose cards show progress bars.
-			return !!row.querySelector('[data-testid="progress-bar"]');
-		}
-
-		function showNotice(text) {
-			if (!notice) {
-				notice = document.createElement('div');
-				notice.id = 'prime-tizen-notice';
-				document.documentElement.appendChild(notice);
-			}
-			notice.textContent = text;
-			notice.style.display = text ? 'block' : 'none';
-		}
-
-		function mark() {
-			markQueued = false;
-			updateDetail();
-			var main = document.querySelector(LANDING);
-			if (!enabled || !main) {
-				showNotice('');
-				return;
-			}
-			var kept = 0;
-			var rows = main.querySelectorAll('[data-testid="navigation-carousel-wrapper"]');
-			Array.prototype.forEach.call(rows, function (row) {
-				var keep = isContinueRow(row);
-				row.classList.toggle('pt-keep', keep);
-				if (keep) kept++;
-			});
-			// Row-level blocks without a test id (e.g. collection banners) sit next to the carousels.
-			var first = rows[0];
-			if (first && first.parentElement) {
-				Array.prototype.forEach.call(first.parentElement.children, function (child) {
-					if (child.tagName !== 'SCRIPT' && !child.hasAttribute('data-testid')) child.classList.add('pt-hide');
-				});
-			}
-			showNotice(rows.length && !kept
-				? 'Nothing in Continue watching yet.\nStart a title on your phone, or press GREEN to show everything.'
-				: '');
-		}
-
-		function queueMark() {
-			if (markQueued) return;
-			markQueued = true;
-			setTimeout(mark, 150);
-		}
-
-		function apply() {
-			document.documentElement.classList.toggle('pt-watch-only', enabled);
-			if (!enabled) restoreImages();
-			mark();
-		}
-
-		return {
-			isContinueRow: isContinueRow,
-			start: function () {
-				injectStyle();
-				apply();
-				new MutationObserver(onMutations).observe(document.documentElement, { childList: true, subtree: true });
-				log('Watch-only home', enabled ? 'on' : 'off');
-			},
-			toggle: function () {
-				enabled = !enabled;
-				apply();
-				log('Watch-only home', enabled ? 'on' : 'off');
-			},
-		};
-	})();
-
-	/* ------------------------------------------------------------------ */
-	/* Auto-resume: a Continue-watching tile goes straight to playback    */
-	/* ------------------------------------------------------------------ */
-
-	var AutoResume = (function () {
-		var FLAG = 'primeTizenAutoResume';
+	var AutoPlay = (function () {
 		// Prime ships different detail-page layouts per region/account; the main CTA is the first match.
 		var PLAY_BUTTONS = [
 			'[data-testid="dp-atf-play-button"]',
@@ -235,19 +69,7 @@
 			'[data-testid="play"][href*="autoplay=1"]',
 			'[data-automation-id="play"]',
 		];
-		var MAX_WAIT_MS = 20000;
-		var timer = null;
-
-		function pending() {
-			var at = Number(sessionStorage.getItem(FLAG) || 0);
-			return at && Date.now() - at < MAX_WAIT_MS;
-		}
-
-		function clear() {
-			sessionStorage.removeItem(FLAG);
-			clearInterval(timer);
-			timer = null;
-		}
+		var GIVE_UP_MS = 30000;
 
 		function findPlayButton() {
 			for (var i = 0; i < PLAY_BUTTONS.length; i++) {
@@ -260,112 +82,19 @@
 			return null;
 		}
 
-		function check() {
-			if (!pending()) return clear();
-			if (!/\/detail\//.test(location.pathname)) return;
-			var button = findPlayButton();
-			if (!button) return;
-			clear();
-			log('Auto-resuming', button.getAttribute('aria-label') || button.textContent.trim());
-			button.click();
-		}
-
-		function watch() {
-			if (!timer) timer = setInterval(check, 300);
-			check();
-		}
-
-		function onClick(event) {
-			var row = event.target && event.target.closest && event.target.closest('[data-testid="navigation-carousel-wrapper"]');
-			if (!row || !WatchOnly.isContinueRow(row) || !event.target.closest('a[href*="/detail/"]')) return;
-			sessionStorage.setItem(FLAG, String(Date.now()));
-			watch();
-		}
-
-		/* On app launch, play the most recent Continue-watching title (once per launch). */
-		var STARTUP_FLAG = 'primeTizenStartupDone';
-		var STARTUP_COUNTDOWN_S = 3;
-		var STARTUP_GIVE_UP_MS = 30000;
-
-		function firstContinueLink() {
-			var rows = document.querySelectorAll('main[data-testid="landingpage"] [data-testid="navigation-carousel-wrapper"]');
-			for (var i = 0; i < rows.length; i++) {
-				if (!WatchOnly.isContinueRow(rows[i])) continue;
-				var link = rows[i].querySelector('[data-testid="card"] a[href*="/detail/"]');
-				if (link) return link;
-			}
-			return null;
-		}
-
-		function titleOf(link) {
-			var img = link.querySelector('img[alt]');
-			return (link.getAttribute('aria-label') || (img && img.alt) || '').trim();
-		}
-
-		function startupPlay() {
-			if (sessionStorage.getItem(STARTUP_FLAG)) return;
-			var startedAt = Date.now();
-			var poll = setInterval(function () {
-				if (Date.now() - startedAt > STARTUP_GIVE_UP_MS || sessionStorage.getItem(STARTUP_FLAG)) {
-					clearInterval(poll);
-					return;
-				}
-				var link = firstContinueLink();
-				if (!link) return;
-				clearInterval(poll);
-				sessionStorage.setItem(STARTUP_FLAG, '1');
-				countdown(link);
-			}, 500);
-		}
-
-		var cancelCountdown = null;
-
-		function countdown(link) {
-			var remaining = STARTUP_COUNTDOWN_S;
-			var name = titleOf(link);
-			var box = document.createElement('div');
-			box.id = 'prime-tizen-startup';
-			document.documentElement.appendChild(box);
-
-			function render() {
-				box.textContent = 'Resuming ' + (name ? '"' + name + '"' : 'your last title') + ' in ' + remaining +
-									'...\nPress any key to cancel';
-			}
-
-			function finish(play) {
-				clearInterval(tick);
-				cancelCountdown = null;
-				box.remove();
-				if (!play) {
-					log('Startup resume cancelled');
-					return;
-				}
-				if (!link.isConnected) link = firstContinueLink();
-				if (link) link.click();
-			}
-
-			var tick = setInterval(function () {
-				remaining--;
-				if (remaining <= 0) finish(true);
-				else render();
-			}, 1000);
-			cancelCountdown = function () { finish(false); };
-			render();
-			log('Startup resume', name || '(untitled)');
-		}
-
 		return {
+			// The launcher opens the picked title's detail page with a full page load: press its Play button.
 			start: function () {
-				document.addEventListener('click', onClick, true);
-				// The detail page may be a full page load rather than an in-app navigation.
-				if (pending()) watch();
-				startupPlay();
-			},
-			// Returns true if a key press was used to cancel the startup countdown.
-			cancelStartup: function () {
-				if (!cancelCountdown) return false;
-				cancelCountdown();
-				return true;
+				if (!/\/detail\//.test(location.pathname)) return;
+				var startedAt = Date.now();
+				var poll = setInterval(function () {
+					if (Date.now() - startedAt > GIVE_UP_MS) return clearInterval(poll);
+					var button = findPlayButton();
+					if (!button) return;
+					clearInterval(poll);
+					log('Playing', button.getAttribute('aria-label') || button.textContent.trim());
+					button.click();
+				}, 300);
 			},
 		};
 	})();
@@ -974,22 +703,18 @@
 		return false;
 	}
 
-	// The Tizen API isn't exposed to primevideo.com, so the PC companion closes the app when it sees
-	// "Exit requested". Fallback: go back to the launcher page, which exits when reached from Prime.
-	function exitApp() {
-		try {
-			if (window.tizen && tizen.application) {
-				tizen.application.getCurrentApplication().exit();
-				return;
-			}
-		} catch (e) { log('Exit failed:', e); }
+	// Back while watching returns to the app's movie list. The PC companion navigates there when it sees
+	// "Show movie list"; fallback: walk history back to the launcher page.
+	function showMovieList() {
 		var video = getMainVideo();
 		if (video) video.pause();
-		log('Exit requested');
+		log('Show movie list');
+		var from = location.href;
 		setTimeout(function () {
+			if (location.href !== from) return;
 			if (history.length > 1) history.go(-(history.length - 1));
 			else window.close();
-		}, 3000);
+		}, 2500);
 	}
 
 	function handleBack() {
@@ -998,7 +723,7 @@
 			active.blur();
 			return;
 		}
-		exitApp();
+		showMovieList();
 	}
 
 	function handleMediaKey(code) {
@@ -1141,29 +866,12 @@
 
 	function onKeyDown(event) {
 		if (!event.isTrusted) return;
-		// Any key during the startup "Resuming…" countdown only cancels it.
-		if (AutoResume.cancelStartup()) {
-			event.preventDefault();
-			event.stopImmediatePropagation();
-			return;
-		}
 		var code = event.keyCode;
 		var handled = false;
-
-		if (!IS_PRIME && Hotstar.onKey(event)) {
-			event.preventDefault();
-			event.stopImmediatePropagation();
-			return;
-		}
 
 		switch (code) {
 			case KEY.RED:
 				Pointer.toggle();
-				handled = true;
-				break;
-			case KEY.GREEN:
-				if (IS_PRIME) WatchOnly.toggle();
-				else Hotstar.askMovie();
 				handled = true;
 				break;
 			case KEY.BACK:
@@ -1541,155 +1249,7 @@
 				return;
 			}
 			goToTarget();
-			MoviePrompt.maybeOpen();
 		}
-
-		/* On-TV "Which movie?" list (loaded from MOVIES_URL), operated with the remote. */
-		var MoviePrompt = (function () {
-			var ASKED_KEY = 'ptHotstarAsked';
-			var MOVIES_URL = 'https://edrive.blackmushroom-4418eafb.southindia.azurecontainerapps.io' +
-				'/public/download/tizenMoviesToPlay.json?parent=tizenMovie';
-			var LIST_KEY = 'jioHotstar';
-			var root = null;
-			var items = [];
-			var sel = 0;
-
-			function el(tag, cls, text) {
-				var node = document.createElement(tag);
-				if (cls) node.className = cls;
-				if (text) node.textContent = text;
-				return node;
-			}
-
-			function injectStyle() {
-				if (document.getElementById('prime-tizen-movie-style')) return;
-				var style = el('style');
-				style.id = 'prime-tizen-movie-style';
-				style.textContent =
-					'#prime-tizen-movie{position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483645;' +
-					'background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;font-family:sans-serif;}' +
-					'#prime-tizen-movie .pt-box{background:#16181f;color:#fff;padding:40px 56px;border-radius:16px;width:1100px;max-width:90vw;}' +
-					'#prime-tizen-movie h2{margin:0 0 20px;font-size:44px;}' +
-					'#prime-tizen-movie .pt-list{max-height:60vh;overflow:hidden;}' +
-					'#prime-tizen-movie .pt-item{padding:16px 24px;margin-bottom:14px;border:4px solid #333;border-radius:12px;background:#1f222b;}' +
-					'#prime-tizen-movie .pt-sel{border-color:#1f80e0;background:#22324a;box-shadow:0 0 0 4px rgba(31,128,224,.4);}' +
-					'#prime-tizen-movie .pt-title{font-size:34px;font-weight:bold;}' +
-					'#prime-tizen-movie .pt-url{font-size:20px;color:#999;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
-					'#prime-tizen-movie .pt-err{color:#ff6b6b;font-size:26px;margin-bottom:16px;}' +
-					'#prime-tizen-movie .pt-hint{font-size:21px;color:#888;margin-top:20px;}';
-				(document.head || document.documentElement).appendChild(style);
-			}
-
-			function titleOf(url, i) {
-				var m = /\/movies\/([^/?#]+)\/\d+/.exec(url);
-				if (!m) return 'Movie ' + (i + 1);
-				return decodeURIComponent(m[1]).replace(/[-_]+/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-			}
-
-			function select(i) {
-				if (!items.length) return;
-				sel = Math.max(0, Math.min(items.length - 1, i));
-				items.forEach(function (item, k) { item.className = 'pt-item' + (k === sel ? ' pt-sel' : ''); });
-				if (items[sel].scrollIntoView) items[sel].scrollIntoView({ block: 'nearest' });
-			}
-
-			function render(box, urls, error) {
-				while (box.firstChild) box.removeChild(box.firstChild);
-				items = [];
-				box.appendChild(el('h2', '', 'Which movie?'));
-				if (error) box.appendChild(el('div', 'pt-err', error));
-				var list = el('div', 'pt-list');
-				urls.forEach(function (url, i) {
-					var item = el('div', 'pt-item');
-					item.appendChild(el('div', 'pt-title', titleOf(url, i)));
-					item.appendChild(el('div', 'pt-url', url.replace(/^https?:\/\/(www\.)?/, '').split('?')[0]));
-					item.addEventListener('click', function () { play(url); });
-					list.appendChild(item);
-					items.push(item);
-				});
-				var home = el('div', 'pt-item');
-				home.appendChild(el('div', 'pt-title', 'Stay here'));
-				home.addEventListener('click', close);
-				list.appendChild(home);
-				items.push(home);
-				box.appendChild(list);
-				box.appendChild(el('div', 'pt-hint', 'Up/Down: choose   OK: play   Back: close   Green: show again'));
-				select(0);
-			}
-
-			function load(box) {
-				box.appendChild(el('h2', '', 'Loading movie list\u2026'));
-				fetch(MOVIES_URL + '&t=' + Date.now(), { cache: 'no-store' })
-					.then(function (r) { return r.json(); })
-					.then(function (data) {
-						if (!root) return;
-						var urls = ((data && data[LIST_KEY]) || []).filter(function (u) { return /^https?:\/\//i.test(u); });
-						render(box, urls, urls.length ? '' : 'No movies in the list.');
-					})
-					.catch(function () { if (root) render(box, [], 'Could not load the movie list.'); });
-			}
-
-			function play(url) {
-				close();
-				sessionStorage.setItem(TARGET_KEY, url);
-				sessionStorage.removeItem(TARGET_TRIES_KEY);
-				targetOpenedAt = 0;
-				goToTarget();
-			}
-
-			function open() {
-				if (root || !document.body) return;
-				sessionStorage.setItem(ASKED_KEY, '1');
-				injectStyle();
-				root = el('div');
-				root.id = 'prime-tizen-movie';
-				var box = el('div', 'pt-box');
-				root.appendChild(box);
-				document.body.appendChild(root);
-				items = [];
-				load(box);
-				log('Asking which movie to play');
-			}
-
-			function close() {
-				if (!root) return;
-				root.remove();
-				root = null;
-				items = [];
-			}
-
-			function onKey(event) {
-				if (!root) return false;
-				switch (event.keyCode) {
-					case KEY.UP: select(sel - 1); return true;
-					case KEY.DOWN: select(sel + 1); return true;
-					case KEY.LEFT:
-					case KEY.RIGHT:
-					case KEY.GREEN:
-						return true;
-					case KEY.ENTER:
-						if (!event.repeat && items[sel]) items[sel].click();
-						return true;
-					case KEY.BACK:
-						close();
-						return true;
-				}
-				return false;
-			}
-
-			return {
-				open: open,
-				onKey: onKey,
-				isOpen: function () { return !!root; },
-				// Ask once per app launch when no movie was given and nothing is playing.
-				maybeOpen: function () {
-					if (root || sessionStorage.getItem(ASKED_KEY) || sessionStorage.getItem(TARGET_KEY)) return;
-					if (/\/watch\b/.test(location.pathname) || /\/mypage/.test(location.pathname)) return;
-					open();
-				},
-				markAsked: function () { sessionStorage.setItem(ASKED_KEY, '1'); },
-			};
-		})();
 
 		return {
 			start: function () {
@@ -1701,7 +1261,6 @@
 					var first = window.__ptTargetUrl ||
 						(/\/watch\b/.test(location.pathname) ? location.href.split('#')[0] : '');
 					if (first) sessionStorage.setItem(TARGET_KEY, first);
-					MoviePrompt.markAsked();
 				}
 				blockImages();
 				onReady(function () {
@@ -1712,8 +1271,6 @@
 					setInterval(ensureSound, 1000);
 				});
 			},
-			onKey: function (event) { return MoviePrompt.onKey(event); },
-			askMovie: function () { MoviePrompt.open(); },
 		};
 	})();
 
@@ -1725,8 +1282,7 @@
 	disableAnimations();
 	if (IS_PRIME) {
 		blockTrailerAutoplay();
-		WatchOnly.start();
-		AutoResume.start();
+		AutoPlay.start();
 	} else {
 		Hotstar.start();
 	}

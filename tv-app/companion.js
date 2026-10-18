@@ -108,13 +108,21 @@ async function main() {
 			log('Closing app on TV');
 			try { sdbOn(serial, ['shell', '0', 'was_kill', APP_ID]); } catch (e) { /* already closed */ }
 		}
+		if (text.indexOf('[PrimeTizen] Show movie list') !== -1 && launcherUrl && !closed) {
+			// Back on the remote: return to the app's own page, which shows the movie list again.
+			client.Page.navigate({ url: launcherUrl }).catch((e) => log('Back to list failed:', e.message));
+		}
 	});
 
 	let closed = false;
+	let launcherUrl = '';
 	const done = new Promise((resolve) => client.on('disconnect', () => { closed = true; resolve(); }));
 
 	await client.Runtime.enable();
 	if (client.Runtime.runIfWaitingForDebugger) await client.Runtime.runIfWaitingForDebugger().catch(() => {});
+
+	launcherUrl = (await client.Runtime.evaluate({ expression: 'location.href', returnByValue: true })).result.value || '';
+	if (!/^file:/i.test(launcherUrl)) launcherUrl = '';
 
 	// Tell the launcher page the companion is attached; it then opens TARGET_URL (or the site's home page).
 	// If Hotstar isn't logged in, the script sends it to the login page and returns to TARGET_URL afterwards.

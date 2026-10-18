@@ -57,13 +57,14 @@ Both apps start with a **Which movie?** list loaded from
 { "jioHotstar": ["https://www.hotstar.com/in/movies/<name>/<id>/watch"], "amazonPrime": ["https://www.primevideo.com/..."] }
 ```
 
-Pick with Up/Down and OK; the chosen URL opens directly, so the site's home page never loads.
-"Home page" opens the home page instead, and Back exits. Titles come from the URL
+Pick with Up/Down and OK; the chosen URL opens directly, so the site's home page never loads (Prime: the
+title's Play/Resume button is pressed automatically). **Exit app**, under the movies, closes the app (Back on
+the list too). **Back while watching returns to this list.** Titles come from the URL
 (`/movies/<name>/` or `/detail/<name>/`); other URLs show as "Movie N". The list is fetched fresh at each
 launch, so editing the JSON file is enough. A URL passed to the companion skips the list.
 
 If you open the app from the TV's app list without the companion, it shows "Waiting for PC companion…".
-Press **OK** to open Prime Video without ad skipping and without the cursor, or **BACK** to exit.
+Press **OK** to pick a movie from the list (played without ad skipping and without the cursor), or **BACK** to exit.
 
 ## JioHotstar
 
@@ -74,8 +75,7 @@ node companion.js hotstar superman/1271509950        # = https://www.hotstar.com
 node companion.js hotstar https://www.hotstar.com/in/...   # any full URL also works
 ```
 
-- Without a movie, the TV shows the `jioHotstar` [movie list](#movie-list). On a Hotstar page, Green
-  shows the list again ("Stay here" or Back closes it).
+- Without a movie, the TV shows the `jioHotstar` [movie list](#movie-list).
 - Opens the given URL directly. If you aren't logged in, it opens
   `https://www.hotstar.com/in/mypage#mp-login` first and returns to the URL after you log in.
 - Picks the **Jatin** profile on the "Who's watching?" page (`PROFILE_NAME` in `userScript.js`).
@@ -84,9 +84,9 @@ node companion.js hotstar https://www.hotstar.com/in/...   # any full URL also w
   the jump doesn't work). The movie's sound is never muted; if Hotstar starts muted (it does after a fresh install), the script presses Unmute.
 - Selects the highest quality in the player's Quality menu (Full HD); Hotstar remembers it per profile.
 
-Remote (with the companion): arrows move the cursor, OK clicks, Back exits the app (the companion closes it over sdb), media keys control playback, while watching (cursor hidden) Left/Right seek ±10 s (hold for ±5 min) and OK
-plays/pauses, Red (A) toggles the cursor, and Green (B) switches between the
-"Continue watching only" home page (default) and the full page.
+Remote (with the companion): arrows move the cursor, OK clicks, Back returns to the movie list, media keys
+control playback, while watching (cursor hidden) Left/Right seek ±10 s (hold for ±5 min) and OK
+plays/pauses, and Red (A) toggles the cursor.
 
 ## Troubleshooting
 

@@ -27,12 +27,9 @@
 		try { tizen.application.getCurrentApplication().exit(); } catch (e) { window.close(); }
 	}
 
-	// Coming "back" from the site to this page means the user wants to leave the app.
-	if (sessionStorage.getItem(LAUNCHED_FLAG)) {
-		sessionStorage.removeItem(LAUNCHED_FLAG);
-		exitApp();
-		return;
-	}
+	// Coming "back" from the site (Back while watching): show the movie list again.
+	var cameBack = !!sessionStorage.getItem(LAUNCHED_FLAG);
+	sessionStorage.removeItem(LAUNCHED_FLAG);
 
 	try {
 		KEYS.forEach(function (key) {
@@ -56,12 +53,12 @@
 		started = true;
 		// No movie given: let the user pick one from the online list, then open it directly
 		// (the site's home page never loads).
-		if (withAdSkip && !url && document.getElementById('movie')) return MovieList.open();
+		if (!url) return MovieList.open(withAdSkip);
 		navigate(url, withAdSkip);
 	}
 
 	var MovieList = (function () {
-		var root, items = [], sel = 0;
+		var root, items = [], sel = 0, adSkip = true;
 
 		function titleCase(s) {
 			return s.replace(/[-_]+/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
@@ -86,15 +83,16 @@
 		function select(i) {
 			if (!items.length) return;
 			sel = Math.max(0, Math.min(items.length - 1, i));
-			items.forEach(function (item, k) { item.className = 'movie-item' + (k === sel ? ' sel' : ''); });
+			items.forEach(function (item, k) { item.classList.toggle('sel', k === sel); });
 			if (items[sel].scrollIntoView) items[sel].scrollIntoView({ block: 'nearest' });
 		}
 
 		function addItem(list, title, url) {
 			var item = el('div', 'movie-item');
 			item.appendChild(el('div', 'movie-title', title));
-			item.appendChild(el('div', 'movie-url', url.replace(/^https?:\/\/(www\.)?/, '').split('?')[0]));
-			item.addEventListener('click', function () { leave(url); });
+			if (url) item.appendChild(el('div', 'movie-url', url.replace(/^https?:\/\/(www\.)?/, '').split('?')[0]));
+			else item.className += ' movie-exit';
+			item.addEventListener('click', function () { if (url) leave(url); else exitApp(); });
 			list.appendChild(item);
 			items.push(item);
 		}
@@ -106,9 +104,10 @@
 			if (error) root.appendChild(el('div', 'movie-error', error));
 			var list = el('div', 'movie-list');
 			urls.forEach(function (url, i) { addItem(list, titleOf(url, i), url); });
-			addItem(list, 'Home page', SITE_URL);
+			addItem(list, 'Exit app', '');
 			root.appendChild(list);
-			root.appendChild(el('div', 'hint', 'Up/Down: choose   OK: play   Back: exit'));
+			root.appendChild(el('div', 'hint', urls.length ? 'Up/Down: choose   OK: select   Back: exit' :
+				'Back: exit'));
 			select(0);
 		}
 
@@ -142,7 +141,7 @@
 		function leave(url) {
 			root.className = 'movie hidden';
 			window.removeEventListener('keydown', onKey, true);
-			navigate(url, true);
+			navigate(url, adSkip);
 		}
 
 		function onKey(e) {
@@ -150,7 +149,10 @@
 			switch (e.keyCode) {
 				case KEY_UP: select(sel - 1); break;
 				case KEY_DOWN: select(sel + 1); break;
-				case KEY_ENTER: if (!e.repeat && items[sel]) items[sel].click(); break;
+				case KEY_ENTER:
+					if (e.repeat) break;
+					if (items[sel]) items[sel].click();
+					break;
 				case KEY_BACK: exitApp(); break;
 				default: handled = false;
 			}
@@ -161,7 +163,8 @@
 		}
 
 		return {
-			open: function () {
+			open: function (withAdSkip) {
+				adSkip = withAdSkip;
 				root = document.getElementById('movie');
 				window.addEventListener('keydown', onKey, true);
 				load();
@@ -171,11 +174,12 @@
 
 	// Called by the PC companion (companion.js) once the debugger is attached.
 	window.primeTizenStart = openPrime;
+	if (cameBack) return openPrime(true);
 	if (window.__primeTizenCompanion) return openPrime(true, window.__primeTizenUrl);
 
 	statusEl.textContent = 'Waiting for PC companion…';
 	hintEl.textContent = 'The remote cursor and extras need the PC companion running (it launches this app). ' +
-		'Press OK to open the site without it, or BACK to exit.';
+		'Press OK to pick a movie without it, or BACK to exit.';
 
 	setTimeout(function () {
 		if (!started) spinnerEl.className = 'spinner hidden';

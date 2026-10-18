@@ -15,27 +15,19 @@ A [TizenBrew](https://github.com/reisxd/TizenBrew) site-modification module that
 |---|---|
 | Arrows | Move cursor (hold to accelerate; pushing against an edge scrolls) |
 | OK / Enter | Click under cursor (focuses text fields to open the TV keyboard) |
-| Back | Close the on-screen keyboard if typing, otherwise exit the app |
+| Back | Close the on-screen keyboard if typing, otherwise go back to the movie list (PC companion app) |
 | Play/Pause, Play, Pause, Stop | Control the video |
 | Left / Right (while watching, cursor hidden) | Tap: seek −10 s / +10 s. Hold: jump −5 / +5 min, repeating while held (disabled during ads) |
 | OK (while watching, cursor hidden) | Play / pause |
 | Up / Down (while watching) | Bring back the cursor |
 | FF / Rewind | Seek ±10 s (disabled while an ad is playing) |
 | Red (A) | Toggle the cursor on/off |
-| Green (B) | Toggle "watch-only" home (only Continue watching) / full home page |
 
 The cursor hides after 4 s of inactivity. The first arrow press after that only brings it back without moving it.
 Hover effects are only triggered once the cursor stops (Prime's hover handlers are slow on TV hardware).
 
-Browsing Prime's home/catalogue pages is heavy on TV hardware (large pages with many images), so the app is
-intended for watching: pick titles on a phone or PC, then use the TV for playback. By default the home, Movies
-and TV shows pages show **only the "Continue watching" row**; the hero trailer, every other row, the footer and
-infinite-scroll loading are removed (their lazy images never load). Press **Green** to show the full page.
-Opening a Continue-watching tile automatically presses the title's Play/Resume ("Watch now") button, so
-playback resumes where you left off. Tiles from other rows just open the detail page.
-When the app starts, it automatically resumes the **most recent** Continue-watching title after a 3-second
-"Resuming…" countdown (once per launch). Press any remote key during the countdown to stay on the home page.
-In watch-only mode, title/detail pages are also stripped down: no images, posters or trailers, and no animations.
+With the PC companion app (see [tv-app/README.md](./tv-app/README.md#movie-list)), the TV starts with a
+**Which movie?** list loaded from a JSON file; the chosen title opens directly and starts playing.
 
 ## Why TizenBrew?
 
