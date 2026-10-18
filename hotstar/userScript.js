@@ -58,6 +58,53 @@
 	}
 
 	/* ------------------------------------------------------------------ */
+	/* No images (artwork, posters, backgrounds)                           */
+	/* ------------------------------------------------------------------ */
+
+	// Keep images only where they're needed: Hotstar's login QR code and Amazon's sign-in (captcha) pages.
+	function keepImages() {
+		if (IS_PRIME) return !/(^|\.)primevideo\.com$/i.test(location.hostname);
+		return /\/mypage/.test(location.pathname);
+	}
+
+	function stripImages(root) {
+		if (!root || root.nodeType !== 1 || keepImages()) return;
+		var imgs = root.tagName === 'IMG' || root.tagName === 'SOURCE' ? [root] : root.querySelectorAll('img, source');
+		for (var i = 0; i < imgs.length; i++) {
+			var img = imgs[i];
+			if (img.closest('[role="dialog"]')) continue;
+			if (img.hasAttribute('srcset')) img.removeAttribute('srcset');
+			if (img.hasAttribute('src') && !/^data:/.test(img.getAttribute('src'))) img.removeAttribute('src');
+		}
+	}
+
+	function blockImages() {
+		var style = document.createElement('style');
+		style.id = 'prime-tizen-no-images';
+		style.textContent =
+			'html.pt-no-images img:not([role="dialog"] img),html.pt-no-images picture:not([role="dialog"] picture)' +
+			'{visibility:hidden!important;}' +
+			'html.pt-no-images body *:not([role="dialog"] *),html.pt-no-images body *::before,' +
+			'html.pt-no-images body *::after{background-image:none!important;}';
+		(document.head || document.documentElement).appendChild(style);
+		var sync = function () {
+			document.documentElement.classList.toggle('pt-no-images', !keepImages());
+		};
+		sync();
+		new MutationObserver(function (records) {
+			sync();
+			for (var i = 0; i < records.length; i++) {
+				var r = records[i];
+				if (r.type === 'attributes') stripImages(r.target);
+				else for (var j = 0; j < r.addedNodes.length; j++) stripImages(r.addedNodes[j]);
+			}
+		}).observe(document.documentElement, {
+			childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset'],
+		});
+		onReady(function () { stripImages(document.body); });
+	}
+
+	/* ------------------------------------------------------------------ */
 	/* Prime: the chosen title's detail page starts playback by itself     */
 	/* ------------------------------------------------------------------ */
 
@@ -83,6 +130,7 @@
 		}
 
 		var SIGNIN_KEY = 'primeTizenSignInAt';
+		var SIGNIN_AFTER_MS = 6000;
 
 		// Signed out: Prime's header has a "Sign In" link (auth-redirect?signin=1&returnUrl=<this page>).
 		function signInLink() {
@@ -114,8 +162,9 @@
 				var startedAt = Date.now();
 				var poll = setInterval(function () {
 					if (Date.now() - startedAt > GIVE_UP_MS) return clearInterval(poll);
-					if (document.readyState !== 'loading' && signInFirst()) return clearInterval(poll);
 					var button = findPlayButton();
+					// No Play button after a while (e.g. "Sign in to watch"): sign in first.
+					if (!button && Date.now() - startedAt > SIGNIN_AFTER_MS && signInFirst()) return clearInterval(poll);
 					if (!button) return;
 					clearInterval(poll);
 					log('Playing', button.getAttribute('aria-label') || button.textContent.trim());
@@ -1076,48 +1125,6 @@
 			return /\/onboarding\/profile/.test(location.pathname);
 		}
 
-		// No artwork anywhere except the login page (its QR code is an image).
-		function keepImages() {
-			return /\/mypage/.test(location.pathname);
-		}
-
-		function stripImages(root) {
-			if (!root || root.nodeType !== 1 || keepImages()) return;
-			var imgs = root.tagName === 'IMG' || root.tagName === 'SOURCE' ? [root] : root.querySelectorAll('img, source');
-			for (var i = 0; i < imgs.length; i++) {
-				var img = imgs[i];
-				if (img.closest('[role="dialog"]')) continue;
-				if (img.hasAttribute('srcset')) img.removeAttribute('srcset');
-				if (img.hasAttribute('src') && !/^data:/.test(img.getAttribute('src'))) img.removeAttribute('src');
-			}
-		}
-
-		function blockImages() {
-			var style = document.createElement('style');
-			style.id = 'prime-tizen-no-images';
-			style.textContent =
-				'html.pt-no-images img:not([role="dialog"] img),html.pt-no-images picture:not([role="dialog"] picture)' +
-				'{visibility:hidden!important;}' +
-				'html.pt-no-images body *:not([role="dialog"] *),html.pt-no-images body *::before,' +
-				'html.pt-no-images body *::after{background-image:none!important;}';
-			(document.head || document.documentElement).appendChild(style);
-			var sync = function () {
-				document.documentElement.classList.toggle('pt-no-images', !keepImages());
-			};
-			sync();
-			new MutationObserver(function (records) {
-				sync();
-				for (var i = 0; i < records.length; i++) {
-					var r = records[i];
-					if (r.type === 'attributes') stripImages(r.target);
-					else for (var j = 0; j < r.addedNodes.length; j++) stripImages(r.addedNodes[j]);
-				}
-			}).observe(document.documentElement, {
-				childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset'],
-			});
-			onReady(function () { stripImages(document.body); });
-		}
-
 		function selectProfile() {
 			var now = Date.now();
 			if (now - profileClickedAt < 3000) return;
@@ -1288,7 +1295,6 @@
 						(/\/watch\b/.test(location.pathname) ? location.href.split('#')[0] : '');
 					if (first) sessionStorage.setItem(TARGET_KEY, first);
 				}
-				blockImages();
 				onReady(function () {
 					check();
 					setInterval(check, 1000);
@@ -1306,6 +1312,7 @@
 
 	registerKeys();
 	disableAnimations();
+	blockImages();
 	if (IS_PRIME) {
 		blockTrailerAutoplay();
 		AutoPlay.start();

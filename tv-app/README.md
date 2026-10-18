@@ -58,7 +58,9 @@ Both apps start with a **Which movie?** list loaded from
 ```
 
 Pick with Up/Down and OK; the chosen URL opens directly, so the site's home page never loads (Prime: the
-title's Play/Resume button is pressed automatically). **Exit app**, under the movies, closes the app (Back on
+title's Play/Resume button is pressed automatically, and the page loads without images or animations: the
+companion blocks Prime's image downloads and the script hides any artwork). If Prime shows no Play button
+(signed out), the app opens Amazon's sign-in page and returns to the title afterwards. **Exit app**, under the movies, closes the app (Back on
 the list too). **Back while watching returns to this list.** Titles come from the URL
 (`/movies/<name>/` or `/detail/<name>/`); other URLs show as "Movie N". The list is fetched fresh at each
 launch, so editing the JSON file is enough. A URL passed to the companion skips the list.
