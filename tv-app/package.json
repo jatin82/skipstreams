@@ -1,7 +1,7 @@
 {
   "name": "prime-tizen-tv-app",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Samsung Tizen TV app (.wgt) for Prime Video plus a PC companion that injects the ad-skip/remote-cursor script.",
   "scripts": {
     "package": "node build.js",

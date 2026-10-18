@@ -1340,8 +1340,22 @@
 		var MOVIES_URL = 'https://edrive.blackmushroom-4418eafb.southindia.azurecontainerapps.io' +
 			'/public/download/tizenMoviesToPlay.json?parent=tizenMovie';
 		var LIST_KEY = IS_PRIME ? 'amazonPrime' : 'jioHotstar';
-		var PICKED_KEY = 'ptPickerDone';
 		var root = null, items = [], urls = [], sel = 0;
+
+		// Show the list on the site's home/browse pages only, never on the picked movie, the player
+		// or sign-in/login steps. (TizenBrew reuses one window, so a per-session flag would hide it
+		// on the next launch.)
+		function wanted() {
+			if (IS_PRIME) {
+				if (!/(^|\.)primevideo\.com$/i.test(location.hostname)) return false;
+				return !/\/(detail|dp|watch|auth|signin|ap)\b/i.test(location.pathname);
+			}
+			// A pending target from an unfinished login is honoured for 15 minutes, then the list shows again.
+			var pickedAt = +sessionStorage.getItem('ptHotstarPickedAt') || 0;
+			var pending = sessionStorage.getItem('ptHotstarTarget') || sessionStorage.getItem('ptHotstarLoginFlow');
+			if (pending && Date.now() - pickedAt < 15 * 60 * 1000) return false;
+			return !/\/(watch|mypage|onboarding|login|subscribe|paywall)\b/i.test(location.pathname);
+		}
 
 		function titleCase(s) {
 			return s.replace(/[-_]+/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
@@ -1422,10 +1436,10 @@
 			var url = urls[sel];
 			if (!url) return exitApp();
 			log('Picked', url);
-			sessionStorage.setItem(PICKED_KEY, '1');
 			// Hotstar: come back to this movie after login / profile selection.
 			if (!IS_PRIME) {
 				sessionStorage.setItem('ptHotstarTarget', url);
+				sessionStorage.setItem('ptHotstarPickedAt', String(Date.now()));
 				sessionStorage.setItem('ptHotstarTargetSeen', '1');
 				sessionStorage.removeItem('ptHotstarTargetTries');
 			}
@@ -1442,7 +1456,8 @@
 			if (root) return;
 			var mount = function () {
 				if (root) return;
-				root = el('div', 'position:fixed;inset:0;z-index:2147483646;background:#0f171e;color:#fff;' +
+				root = el('div', 'position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;' +
+					'z-index:2147483646;background:#0f171e;color:#fff;' +
 					'font-family:sans-serif;display:flex;flex-direction:column;align-items:center;' +
 					'justify-content:center;');
 				root.id = 'prime-tizen-movie-list';
@@ -1456,7 +1471,7 @@
 			isOpen: function () { return !!root; },
 			// First page of a TizenBrew launch: ask which movie before the site's home page loads.
 			startIfNeeded: function () {
-				if (WITH_COMPANION || sessionStorage.getItem(PICKED_KEY)) return;
+				if (WITH_COMPANION || !wanted()) return;
 				try { window.stop(); } catch (e) { /* keep loading */ }
 				open();
 			},
