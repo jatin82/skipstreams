@@ -1,5 +1,23 @@
 # Prime Video AdSkip: Samsung TV app + PC companion
 
+## Custom TizenBrew module button
+
+[tizenbrew-module-button.patch](tizenbrew-module-button.patch) patches the UI of
+[TizenBrew v2.0.5](https://github.com/reisxd/TizenBrew/tree/v2.0.5) to add an explicit **Add module**
+button for GitHub and npm modules. Leaving the input no longer saves it. Enter, Down or Tab moves
+from the input to the button; OK adds the module, and Up returns to editing.
+This adds an exact module address, not a GitHub repository search.
+
+To rebuild, apply the patch at the root of the upstream v2.0.5 checkout, then run
+`npm ci --legacy-peer-deps` and `npm run build` in `tizenbrew-app\TizenBrew\tizenbrew-ui`.
+Replace only `tizenbrew-ui/dist/` in the official `TizenBrewStandalone-Old.wgt` with that build.
+Re-sign the package with a Samsung certificate covering the target TV before installing.
+The local signed build is `dist\tizenbrew\module-button\signed\TizenBrew-ModuleButton.wgt`,
+signed with `Monitor32` to match the monitor's installed author certificate.
+An official TizenBrew update will overwrite this custom UI.
+
+## App launcher
+
 The TV app (`.wgt`) opens `https://www.primevideo.com/`. The PC companion (`companion.js`) injects
 [../userScript.js](../userScript.js) into it, which skips ads and adds the remote cursor.
 
