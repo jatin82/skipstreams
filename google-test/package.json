@@ -1,0 +1,14 @@
+{
+  "name": "google-injection-test-tizenbrew",
+  "appName": "Google Injection Test",
+  "version": "1.0.0",
+  "description": "TizenBrew diagnostic module: open Google and log i am injected.",
+  "packageType": "mods",
+  "websiteURL": "https://www.google.com/",
+  "main": "userScript.js",
+  "keys": [],
+  "files": [
+    "userScript.js"
+  ],
+  "license": "MIT"
+}
