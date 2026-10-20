@@ -52,7 +52,7 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 | Module | Add in TizenBrew as | Opens |
 |---|---|---|
 | Prime Video (Ad Skip) | `jatin82/skipstreams@v1.4.2` | primevideo.com |
-| JioHotstar | `jatin82/skipstreams@v1.4.0/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
+| JioHotstar | `jatin82/skipstreams@v1.4.3/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
 
 1. **Install TizenBrew on the TV** following the
    [TizenBrew guide](https://github.com/reisxd/TizenBrew/blob/main/docs/README.md). With a Samsung
@@ -64,7 +64,7 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
    to the PC's IP.
 3. Open **TizenBrew → Module Manager → Add GitHub module** and add each module from the table.
    The custom widget prefills `jatin82/skipstreams@`, with the cursor at the end. Enter only the
-   remaining part, such as `v1.4.2` or `v1.4.0/hotstar`. The field is editable if you want another
+   remaining part, such as `v1.4.2` or `v1.4.3/hotstar`. The field is editable if you want another
    repository; replace the whole value when pasting a full address. The prefix alone cannot be
    submitted, and **Add NPM Module** still starts with an empty field.
 4. If Prime Video shows an "unsupported browser" page, set a desktop Chrome user agent in TizenBrew's
@@ -73,10 +73,10 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 When a module starts, it shows the same **Which movie?** list as the TV apps, loaded from the online
 JSON file. The modules start on the site's tiny `robots.txt` page, so no home page, images or scripts load
 before you pick; only the chosen movie's page opens. Pick a movie with Up/Down/OK, and Back while watching
-brings the list back. Prime `v1.4.2` and the working-tree Hotstar script make **Exit app** (or Back
+brings the list back. Prime `v1.4.2` and JioHotstar `v1.4.3` make **Exit app** (or Back
 on the list) return to TizenBrew's module screen through the updated custom service bridge,
-rather than closing TizenBrew to the Samsung launcher. The Hotstar address above remains on
-the older `v1.4.0` release and does not include these changes. A missing/disconnected return
+rather than closing TizenBrew to the Samsung launcher. Both require the updated custom
+TizenBrew widget's return bridge. A missing/disconnected return
 bridge shows an error on the list instead of
 falling back to the TV launcher.
 
