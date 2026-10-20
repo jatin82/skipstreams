@@ -3,7 +3,7 @@
  *
  * - Clicks "Skip ad" controls and fast-forwards (muted) unskippable ads.
  * - Remote-controlled virtual cursor: arrows move, OK clicks, edges scroll.
- * - Suppresses artwork while leaving Prime's page and player initialization intact.
+ * - Loads the complete Prime page before attempting Watch/Resume.
  * - Back opens the movie list; exiting the list returns to TizenBrew.
  *
  * Ad logic ported from the "Prime Video Ads Auto-Skip" Tampermonkey script.
@@ -1580,11 +1580,20 @@
 	registerKeys();
 	whenRoot(function () {
 		if (!IS_PRIME) disableAnimations();
-		blockImages();
+		if (!IS_PRIME) blockImages();
 		PagePicker.startIfNeeded();
 	});
 	if (IS_PRIME) {
-		AutoPlay.start();
+		if (document.readyState === 'complete') {
+			trace('page-loaded-before-autoplay');
+			AutoPlay.start();
+		} else {
+			trace('autoplay-waiting-for-page-load');
+			window.addEventListener('load', function () {
+				trace('page-loaded-before-autoplay');
+				AutoPlay.start();
+			}, { once: true });
+		}
 	} else {
 		Hotstar.start();
 	}

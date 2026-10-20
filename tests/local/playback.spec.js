@@ -1,6 +1,26 @@
 const { test, expect } = require('@playwright/test');
 const { createFixture, BREW_HOME } = require('./fixtures');
 
+test('Prime waits for a pending image load before clicking Resume', async ({ page }) => {
+	const fixture = await createFixture(page, 'prime', { mode: 'resume' });
+	let releaseImage;
+	const pendingImage = new Promise(resolve => { releaseImage = resolve; });
+	await page.route('https://images.test/poster.webp', async route => {
+		await pendingImage;
+		await route.abort('blockedbyclient');
+	});
+	try {
+		await page.goto(fixture.movieUrl, { waitUntil: 'domcontentloaded' });
+		await page.waitForTimeout(1000);
+		expect(await page.evaluate(() => document.readyState)).not.toBe('complete');
+		expect(await page.evaluate(() => window.__localTest.clicks.length)).toBe(0);
+	} finally {
+		releaseImage();
+	}
+	await expect.poll(() => page.evaluate(() => window.__localTest.clicks.length)).toBe(1);
+	expect(await page.locator('video').evaluate(video => video.currentTime)).toBe(125);
+});
+
 test('Prime rejects app playback links and selects the web playback control', async ({ page }) => {
 	const fixture = await createFixture(page, 'prime', { appDuplicate: true });
 	await fixture.openMovie();
@@ -154,11 +174,17 @@ for (const site of ['prime', 'hotstar']) {
 		expect(fixture.state.errors).toEqual([]);
 	});
 
-	test(site + ': artwork is stripped without removing the video source', async ({ page }) => {
+	test(site + ': artwork follows site policy without removing the video source', async ({ page }) => {
 		const fixture = await createFixture(page, site);
 		await fixture.openMovie();
-		await expect(page.getByTestId('artwork')).not.toHaveAttribute('src');
-		await expect(page.getByTestId('artwork-source')).not.toHaveAttribute('srcset');
+		if (site === 'prime') {
+			await expect(page.getByTestId('artwork')).toHaveAttribute('src', 'https://images.test/poster.jpg');
+			await expect(page.getByTestId('artwork-source')).toHaveAttribute('srcset', 'https://images.test/poster.webp');
+			await expect(page.locator('#prime-tizen-no-images')).toHaveCount(0);
+		} else {
+			await expect(page.getByTestId('artwork')).not.toHaveAttribute('src');
+			await expect(page.getByTestId('artwork-source')).not.toHaveAttribute('srcset');
+		}
 		await expect(page.getByTestId('media-source')).toHaveAttribute('src', 'https://media.test/movie.mp4');
 		expect(fixture.state.errors).toEqual([]);
 	});

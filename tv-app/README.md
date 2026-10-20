@@ -19,7 +19,7 @@ node tv-app\debug-log-server.js --config tv-app\dist\tizenbrew\tb-debug\receiver
 The dashboard is `http://192.168.29.126:8088`. Stop the normal TizenBrew service before
 using TB-Debug: both variants use the same TV service ports. Service startup remains
 manual through **Restart service**. The separate app may need its modules added again;
-use `jatin82/skipstreams@05` for Prime web playback and navigation diagnostics.
+use `jatin82/skipstreams@06` for full-page Prime loading, web playback and navigation diagnostics.
 
 Userscript `[PrimeTizen] Trace` entries correlate each document's startup, lifecycle,
 picker decisions/selection, Back events and autoplay state. New trace URL fields omit
@@ -103,8 +103,8 @@ Both apps start with a **Which movie?** list loaded from
 ```
 
 Pick with Up/Down and OK; the chosen URL opens directly, so the site's home page never loads (Prime: the
-title's Play/Resume button is pressed automatically, and the page loads with artwork suppressed: the
-companion blocks Prime's image downloads and the script hides any artwork). If Prime shows no Play button
+title's Play/Resume button is pressed automatically after the full page loads, including images;
+the companion does not block image downloads). If Prime shows no Play button
 (signed out), the app opens Amazon's sign-in page and returns to the title afterwards. **Exit app**, under the movies, closes the app (Back on
 the list too). **Back while watching returns to this list.** Titles come from the URL
 (`/movies/<name>/` or `/detail/<name>/`); other URLs show as "Movie N". The list is fetched fresh at each

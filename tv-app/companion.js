@@ -27,12 +27,6 @@ const APP_ID = process.env.APP_ID || APPS[APP_NAME];
 const SDB = process.env.SDB || 'sdb';
 const USER_SCRIPT_PATH = path.join(__dirname, '..', 'userScript.js');
 const SDB_PORT = 26101;
-// Artwork the TV never downloads. Prime's CDN also serves its scripts/styles under /images/, so only
-// image file types are blocked. Amazon's sign-in captcha is served from another host.
-const BLOCKED_IMAGES = {
-	prime: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif'].reduce((urls, ext) => urls.concat(
-		'*media-amazon.com/*.' + ext + '*', '*ssl-images-amazon.com/*.' + ext + '*'), []),
-};
 
 // Hotstar shorthand: "<moviename>/<number>" -> https://www.hotstar.com/in/movies/<moviename>/<number>/watch
 function resolveTarget(arg) {
@@ -125,13 +119,6 @@ async function main() {
 	const done = new Promise((resolve) => client.on('disconnect', () => { closed = true; resolve(); }));
 
 	await client.Runtime.enable();
-	if (BLOCKED_IMAGES[APP_NAME]) {
-		try {
-			await client.Network.enable();
-			await client.Network.setBlockedURLs({ urls: BLOCKED_IMAGES[APP_NAME] });
-			log('Blocking image downloads');
-		} catch (e) { log('Image blocking unavailable:', e.message); }
-	}
 	if (client.Runtime.runIfWaitingForDebugger) await client.Runtime.runIfWaitingForDebugger().catch(() => {});
 
 	launcherUrl = (await client.Runtime.evaluate({ expression: 'location.href', returnByValue: true })).result.value || '';
