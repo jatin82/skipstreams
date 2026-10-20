@@ -45,6 +45,24 @@ test('Prime retries an ignored click and sends the full press sequence', async (
 	expect(fixture.state.errors).toEqual([]);
 });
 
+test('Prime leaves page animations and videos outside the player container unrestricted', async ({ page }) => {
+	const fixture = await createFixture(page, 'prime', { alreadyPlaying: true });
+	await fixture.openMovie();
+	expect(await page.locator('#prime-tizen-no-anim').count()).toBe(0);
+	const state = await page.evaluate(async () => {
+		const video = document.createElement('video');
+		document.body.appendChild(video);
+		await video.play();
+		const animation = video.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1000 });
+		const result = { paused: video.paused, muted: video.muted, duration: animation.effect.getTiming().duration };
+		animation.cancel();
+		video.remove();
+		return result;
+	});
+	expect(state).toEqual({ paused: false, muted: false, duration: 1000 });
+	expect(fixture.state.errors).toEqual([]);
+});
+
 test('Prime does not click again or reset the position when playback is already active', async ({ page }) => {
 	const fixture = await createFixture(page, 'prime', { mode: 'resume', alreadyPlaying: true });
 	await fixture.openMovie();

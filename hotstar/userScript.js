@@ -3,7 +3,7 @@
  *
  * - Clicks "Skip ad" controls and fast-forwards (muted) unskippable ads.
  * - Remote-controlled virtual cursor: arrows move, OK clicks, edges scroll.
- * - Disables page animations and trailer autoplay to keep the TV responsive.
+ * - Suppresses artwork while leaving Prime's page and player initialization intact.
  * - Back opens the movie list; exiting the list returns to TizenBrew.
  *
  * Ad logic ported from the "Prime Video Ads Auto-Skip" Tampermonkey script.
@@ -1525,12 +1525,11 @@
 
 	registerKeys();
 	whenRoot(function () {
-		disableAnimations();
+		if (!IS_PRIME) disableAnimations();
 		blockImages();
 		PagePicker.startIfNeeded();
 	});
 	if (IS_PRIME) {
-		blockTrailerAutoplay();
 		AutoPlay.start();
 	} else {
 		Hotstar.start();

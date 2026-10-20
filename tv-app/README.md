@@ -76,7 +76,7 @@ Both apps start with a **Which movie?** list loaded from
 ```
 
 Pick with Up/Down and OK; the chosen URL opens directly, so the site's home page never loads (Prime: the
-title's Play/Resume button is pressed automatically, and the page loads without images or animations: the
+title's Play/Resume button is pressed automatically, and the page loads with artwork suppressed: the
 companion blocks Prime's image downloads and the script hides any artwork). If Prime shows no Play button
 (signed out), the app opens Amazon's sign-in page and returns to the title afterwards. **Exit app**, under the movies, closes the app (Back on
 the list too). **Back while watching returns to this list.** Titles come from the URL

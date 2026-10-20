@@ -8,8 +8,9 @@ A [TizenBrew](https://github.com/reisxd/TizenBrew) site-modification module that
   to 16× (falls back to 8×/4×/2× if the TV decoder refuses), then restores speed/volume.
   Logic is ported from the `primeAdsSkip.js` Tampermonkey script.
 - **Remote cursor**: the desktop site isn't remote-friendly, so a pointer is added.
-- **TV-friendly page**: all CSS/Web animations are disabled and trailers (hero banners,
-  hover previews, detail pages) never autoplay; only the real player video plays.
+- **Prime page compatibility**: artwork is suppressed, but page scripts, styles, CSS/Web
+  animations and native video initialization are left enabled. Prime videos outside
+  `#dv-web-player` are not forcibly paused or muted. Hotstar still disables animations.
 
 | Remote key | Action |
 |---|---|
@@ -51,7 +52,7 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 
 | Module | Add in TizenBrew as | Opens |
 |---|---|---|
-| Prime Video (Ad Skip) | `jatin82/skipstreams@02` | primevideo.com |
+| Prime Video (Ad Skip) | `jatin82/skipstreams@03` | primevideo.com |
 | JioHotstar | `jatin82/skipstreams@01/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
 
 1. **Install TizenBrew on the TV** following the
@@ -64,7 +65,7 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
    to the PC's IP.
 3. Open **TizenBrew → Module Manager → Add GitHub module** and add each module from the table.
    The custom widget prefills `jatin82/skipstreams@`, with the cursor at the end. Enter only the
-   remaining part, such as `02` or `01/hotstar`. The field is editable if you want another
+   remaining part, such as `03` or `01/hotstar`. The field is editable if you want another
    repository; replace the whole value when pasting a full address. The prefix alone cannot be
    submitted, and **Add NPM Module** still starts with an empty field.
 4. If Prime Video shows an "unsupported browser" page, set a desktop Chrome user agent in TizenBrew's
@@ -92,8 +93,8 @@ requests are not blanket-blocked: removing those would prevent real playback. DO
 suppression is not a guarantee that every image request is prevented before it starts.
 
 Release tags use two digits without a prefix or dots, starting at `01`. Both modules retain
-semantic package versions internally (`1.5.1` for Prime `02`, `1.5.0` for JioHotstar `01`) for compatibility.
-Use the release-tag names (`@02` for Prime, `@01/hotstar` for JioHotstar). A tag never changes, so jsDelivr can't serve a stale copy. To
+semantic package versions internally (`1.5.2` for Prime `03`, `1.5.0` for JioHotstar `01`) for compatibility.
+Use the release-tag names (`@03` for Prime, `@01/hotstar` for JioHotstar). A tag never changes, so jsDelivr can't serve a stale copy. To
 update, remove the module and add it again with the new tag. `@main` works too, but jsDelivr can keep
 an old copy for up to 12 hours, and purges are rate-limited. The plain `jatin82/skipstreams` address
 can stay stuck on an old version for a long time.
