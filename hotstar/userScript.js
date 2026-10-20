@@ -177,20 +177,24 @@
 			start: function () {
 				if (!IS_PRIME || !/\/(?:detail|dp)\//.test(location.pathname)) return;
 				var startedAt = Date.now();
+				var lastClickAt = 0;
 				var poll = setInterval(function () {
 					if (Date.now() - startedAt > GIVE_UP_MS) {
-						log('No enabled Prime Watch/Resume button appeared within 30 seconds');
+						log(lastClickAt ? 'Prime Watch/Resume clicks did not start playback within 30 seconds' :
+							'No enabled Prime Watch/Resume button appeared within 30 seconds');
 						return clearInterval(poll);
 					}
 					var video = getMainVideo();
-					if (video && !video.paused) return clearInterval(poll);
+					if (video && video.closest('#dv-web-player') && !video.paused) return clearInterval(poll);
+					if (playerIsOpen() || PagePicker.isOpen()) return;
 					var button = findPlayButton();
 					// No Play button after a while (e.g. "Sign in to watch"): sign in first.
 					if (!button && Date.now() - startedAt > SIGNIN_AFTER_MS && signInFirst()) return clearInterval(poll);
-					if (!button) return;
-					clearInterval(poll);
+					if (!button || Date.now() - lastClickAt < 3000) return;
+					lastClickAt = Date.now();
 					log('Playing', button.getAttribute('aria-label') || button.textContent.trim());
-					button.click();
+					// The first click can arrive before Prime has attached its player handlers.
+					Pointer.fireClick(button);
 				}, 300);
 			},
 		};

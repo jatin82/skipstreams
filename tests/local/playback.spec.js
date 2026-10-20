@@ -36,6 +36,15 @@ test('Prime supports the stable automation ID without relying on generated CSS c
 	expect(fixture.state.errors).toEqual([]);
 });
 
+test('Prime retries an ignored click and sends the full press sequence', async ({ page }) => {
+	const fixture = await createFixture(page, 'prime', { mode: 'resume', ignoreClicks: 1, requirePress: true });
+	await fixture.openMovie();
+	await expect.poll(() => page.evaluate(() => window.__localTest.clicks.length), { timeout: 10000 }).toBe(1);
+	await expect.poll(() => page.locator('video').evaluate(video => video.paused)).toBe(false);
+	expect(await page.locator('video').evaluate(video => video.currentTime)).toBe(125);
+	expect(fixture.state.errors).toEqual([]);
+});
+
 test('Prime does not click again or reset the position when playback is already active', async ({ page }) => {
 	const fixture = await createFixture(page, 'prime', { mode: 'resume', alreadyPlaying: true });
 	await fixture.openMovie();

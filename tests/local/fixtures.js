@@ -44,8 +44,14 @@ function installPlatformMock() {
 		const video = document.querySelector('video');
 		const player = document.getElementById('dv-web-player');
 		document.querySelectorAll('a[data-local-play]').forEach(button => {
+			let attempts = 0;
+			let pressed = false;
+			button.addEventListener('mousedown', () => { pressed = true; });
 			button.addEventListener('click', event => {
 				event.preventDefault();
+				attempts++;
+				if (attempts <= Number(button.dataset.ignoreClicks || 0) ||
+					button.dataset.requirePress === 'true' && !pressed) return;
 				window.__localTest.clicks.push({ text: button.textContent.trim(), href: button.href });
 				video.currentTime = Number(new URL(button.href).searchParams.get('t'));
 				document.getElementById('title-controls').hidden = true;
@@ -63,11 +69,12 @@ function installPlatformMock() {
 	});
 }
 
-function playbackLink({ mode, automationOnly, disabled, hidden = false }) {
+function playbackLink({ mode, automationOnly, disabled, hidden = false, ignoreClicks = 0, requirePress = false }) {
 	const resume = mode === 'resume';
 	const time = hidden ? 999 : resume ? 125 : 0;
 	const label = hidden ? 'Hidden duplicate' : resume ? 'Resume Episode 1' : 'Watch now';
 	return `<a data-local-play class="${automationOnly ? 'play-action' : '_1jWggM BLmu_g fbl-play-btn fbl-btn'}"
+		data-ignore-clicks="${ignoreClicks}" data-require-press="${requirePress}"
 		${automationOnly ? '' : 'data-testid="dp-atf-play-button"'}
 		data-automation-id="dp-atf-play-button" role="button" aria-disabled="${disabled ? 'true' : 'false'}"
 		${disabled ? 'data-enable-after="600"' : ''} ${hidden ? 'style="visibility:hidden"' : ''}
