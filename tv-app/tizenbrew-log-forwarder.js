@@ -23,6 +23,9 @@ module.exports = function attachLogForwarder(client, moduleInfo, config, record)
 	function isGoogleTest() {
 		return /^gh\/jatin82\/skipstreams(?:@[^/]+)?\/google-test$/.test(moduleInfo.fullName || '');
 	}
+	function supportsModuleReturn() {
+		return /^gh\/jatin82\/skipstreams(?:@[^/]+)?(?:\/(?:hotstar|google-test))?$/.test(moduleInfo.fullName || '');
+	}
 	function observe(level, text) {
 		if (loggingEnabled && record) record({ level: level, text: text, url: 'transport://' + (moduleInfo.fullName || 'TizenBrew') });
 	}
@@ -151,19 +154,24 @@ module.exports = function attachLogForwarder(client, moduleInfo, config, record)
 	var backBinding = null;
 	if (typeof client.send === 'function' && client.Page && client.Runtime) {
 		backBinding = Promise.resolve().then(function () {
-			return client.send('Runtime.addBinding', { name: '__tizenBrewGoogleBack' });
+			return Promise.all(['__tizenBrewReturnToHome', '__tizenBrewGoogleBack'].map(function (name) {
+				return client.send('Runtime.addBinding', { name: name });
+			}));
 		}).then(function () {
 			return true;
 		}, function (error) {
-			functionalError('Google Back binding unavailable: ' + failureText(error));
+			functionalError('Module return binding unavailable: ' + failureText(error));
 			return false;
 		});
 		client.on('Runtime.bindingCalled', function (event) {
-			if (closed || returningHome || event.name !== '__tizenBrewGoogleBack' || event.payload !== 'home' || !isGoogleTest()) return;
+			var requested = event.name === '__tizenBrewReturnToHome' && supportsModuleReturn() ||
+				event.name === '__tizenBrewGoogleBack' && isGoogleTest();
+			if (closed || returningHome || !requested || event.payload !== 'home') return;
 			returningHome = true;
 			var previous = {};
 			Object.keys(moduleInfo).forEach(function (key) { previous[key] = moduleInfo[key]; });
-			enqueue('info', '[TV debug logs] Google Back requested; closing active module and returning to TizenBrew Home');
+			enqueue('info', '[TV debug logs] Module exit requested; module=' + moduleInfo.fullName +
+				'; returning to the TizenBrew module screen');
 			['fullName', 'name', 'appPath', 'moduleType', 'packageType', 'serviceFile', 'mainFile', 'tizenAppId'].forEach(function (key) {
 				moduleInfo[key] = '';
 			});
@@ -173,7 +181,7 @@ module.exports = function attachLogForwarder(client, moduleInfo, config, record)
 			}).then(function (response) {
 				if (response && response.errorText) throw new Error(response.errorText);
 				returningHome = false;
-				enqueue('info', '[TV debug logs] Google module closed; TizenBrew Home navigation accepted', homeUrl);
+				enqueue('info', '[TV debug logs] Module closed; TizenBrew navigation accepted', homeUrl);
 			}).catch(function (error) {
 				if (!moduleInfo.name) Object.keys(previous).forEach(function (key) { moduleInfo[key] = previous[key]; });
 				returningHome = false;

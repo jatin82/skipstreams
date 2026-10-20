@@ -72,7 +72,7 @@ test('Google remote Back returns to local Home and clears only the active module
 	page.top = page;
 	client.send = async (method, params) => {
 		assert.equal(method, 'Runtime.addBinding');
-		assert.equal(params.name, '__tizenBrewGoogleBack');
+		assert.ok(['__tizenBrewReturnToHome', '__tizenBrewGoogleBack'].includes(params.name));
 	};
 	client.Runtime = { evaluate: async params => { vm.runInNewContext(params.expression, { window: page }); return {}; } };
 	client.Page = { enable: async () => {}, navigate: async params => {
@@ -93,7 +93,7 @@ test('Google remote Back returns to local Home and clears only the active module
 	assert.equal(navigated, 'file:///tizenbrew-ui/dist/index.html');
 	assert.equal(moduleInfo.fullName, '');
 	assert.equal(moduleInfo.mainFile, '');
-	assert.ok(records.some(entry => entry.text.includes('Google module closed')));
+	assert.ok(records.some(entry => entry.text.includes('Module closed')));
 });
 
 test('a failed Google Home navigation restores module selection and reports the failure', async t => {
@@ -111,6 +111,42 @@ test('a failed Google Home navigation restores module selection and reports the 
 	await new Promise(resolve => setImmediate(resolve));
 	assert.equal(moduleInfo.name, 'google-test');
 	assert.ok(records.some(entry => entry.level === 'error' && entry.text.includes('navigation denied')));
+});
+
+test('Prime and Hotstar return to TizenBrew with logging off, without affecting unrelated modules', async t => {
+	for (const fullName of [
+		'gh/jatin82/skipstreams@v1.4.0',
+		'gh/jatin82/skipstreams@v1.4.0/hotstar',
+		'gh/other/repository@main',
+	]) {
+		const client = new EventEmitter();
+		const moduleInfo = { name: 'selected', fullName, mainFile: 'userScript.js' };
+		const bindings = [];
+		let navigated;
+		client.send = async (method, params) => bindings.push(params.name);
+		client.Runtime = {};
+		client.Page = { navigate: async params => {
+			assert.equal(moduleInfo.name, '');
+			navigated = params.url;
+			return {};
+		} };
+		const forwarder = rawLogForwarder(client, moduleInfo, { host: '127.0.0.1', port: 1, token: 'test' });
+		t.after(() => forwarder.stop());
+		await new Promise(resolve => setImmediate(resolve));
+		assert.ok(bindings.includes('__tizenBrewReturnToHome'));
+		assert.ok(bindings.includes('__tizenBrewGoogleBack'));
+		client.emit('Runtime.bindingCalled', { name: '__tizenBrewReturnToHome', payload: 'home' });
+		await new Promise(resolve => setImmediate(resolve));
+		if (fullName.startsWith('gh/jatin82/skipstreams')) {
+			assert.equal(navigated, 'file:///tizenbrew-ui/dist/index.html');
+			assert.equal(moduleInfo.fullName, '');
+			assert.equal(moduleInfo.mainFile, '');
+		} else {
+			assert.equal(navigated, undefined);
+			assert.equal(moduleInfo.fullName, fullName);
+		}
+		assert.equal(forwarder.getStatus().queued, 0);
+	}
 });
 
 test('formats console values without executing page code', () => {

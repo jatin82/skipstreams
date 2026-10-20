@@ -4,7 +4,7 @@
  * - Clicks "Skip ad" controls and fast-forwards (muted) unskippable ads.
  * - Remote-controlled virtual cursor: arrows move, OK clicks, edges scroll.
  * - Disables page animations and trailer autoplay to keep the TV responsive.
- * - Back key navigates back / closes player, media keys control playback.
+ * - Back opens the movie list; exiting the list returns to TizenBrew.
  *
  * Ad logic ported from the "Prime Video Ads Auto-Skip" Tampermonkey script.
  */
@@ -82,7 +82,8 @@
 
 	function stripImages(root) {
 		if (!root || root.nodeType !== 1 || keepImages()) return;
-		var imgs = root.tagName === 'IMG' || root.tagName === 'SOURCE' ? [root] : root.querySelectorAll('img, source');
+		var imgs = root.tagName === 'IMG' ? [root] : root.tagName === 'SOURCE' ?
+			(root.closest('picture') ? [root] : []) : root.querySelectorAll('img, picture source');
 		for (var i = 0; i < imgs.length; i++) {
 			var img = imgs[i];
 			if (img.closest('[role="dialog"]')) continue;
@@ -124,7 +125,10 @@
 	var AutoPlay = (function () {
 		// Prime ships different detail-page layouts per region/account; the main CTA is the first match.
 		var PLAY_BUTTONS = [
+			'.dv-dp-node-playback a[data-testid="dp-atf-play-button"]',
+			'.dv-dp-node-playback a[data-automation-id="dp-atf-play-button"]',
 			'[data-testid="dp-atf-play-button"]',
+			'[data-automation-id="dp-atf-play-button"]',
 			'a.fbl-play-btn[href*="autoplay=1"]',
 			'[data-testid="play"][href*="autoplay=1"]',
 			'[data-automation-id="play"]',
@@ -136,7 +140,7 @@
 				var matches = document.querySelectorAll(PLAY_BUTTONS[i]);
 				for (var j = 0; j < matches.length; j++) {
 					var el = matches[j];
-					if (el.offsetWidth && el.getAttribute('aria-disabled') !== 'true') return el;
+					if (isVisible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true') return el;
 				}
 			}
 			return null;
@@ -171,10 +175,15 @@
 		return {
 			// The launcher opens the picked title's detail page with a full page load: press its Play button.
 			start: function () {
-				if (!/\/detail\//.test(location.pathname)) return;
+				if (!IS_PRIME || !/\/(?:detail|dp)\//.test(location.pathname)) return;
 				var startedAt = Date.now();
 				var poll = setInterval(function () {
-					if (Date.now() - startedAt > GIVE_UP_MS) return clearInterval(poll);
+					if (Date.now() - startedAt > GIVE_UP_MS) {
+						log('No enabled Prime Watch/Resume button appeared within 30 seconds');
+						return clearInterval(poll);
+					}
+					var video = getMainVideo();
+					if (video && !video.paused) return clearInterval(poll);
 					var button = findPlayButton();
 					// No Play button after a while (e.g. "Sign in to watch"): sign in first.
 					if (!button && Date.now() - startedAt > SIGNIN_AFTER_MS && signInFirst()) return clearInterval(poll);
@@ -1341,6 +1350,7 @@
 			'/public/download/tizenMoviesToPlay.json?parent=tizenMovie';
 		var LIST_KEY = IS_PRIME ? 'amazonPrime' : 'jioHotstar';
 		var root = null, items = [], urls = [], sel = 0;
+		var exitTimer = null;
 
 		// Show the list on the site's home/browse pages only, never on the picked movie, the player
 		// or sign-in/login steps. (TizenBrew reuses one window, so a per-session flag would hide it
@@ -1370,7 +1380,27 @@
 		}
 
 		function exitApp() {
-			try { tizen.application.getCurrentApplication().exit(); } catch (e) { window.close(); }
+			if (exitTimer !== null) return;
+			function failed(message) {
+				clearTimeout(exitTimer);
+				exitTimer = null;
+				log('Return to TizenBrew failed:', message);
+				if (root) render(message);
+			}
+			if (typeof window.__tizenBrewReturnToHome !== 'function') {
+				failed('Return to TizenBrew is unavailable. Update/start the TizenBrew service and try again.');
+				return;
+			}
+			render('Returning to TizenBrew...');
+			exitTimer = setTimeout(function () {
+				failed('Return to TizenBrew did not complete. The service may be disconnected; please try again.');
+			}, 5000);
+			try {
+				log('Returning to TizenBrew');
+				window.__tizenBrewReturnToHome('home');
+			} catch (error) {
+				failed('Could not return to TizenBrew: ' + String(error && error.message || error));
+			}
 		}
 
 		function el(tag, css, text) {

@@ -21,7 +21,14 @@
   ],
   "keywords": ["tizenbrew", "tizen", "samsung", "primevideo"],
   "scripts": {
-    "check": "node --check userScript.js"
+    "check": "node --check userScript.js",
+    "test": "node --test userScript.test.js local-tizenbrew.test.js",
+    "test:local": "playwright test",
+    "test:local:headed": "playwright test --headed",
+    "local:live": "node local-tizenbrew.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
   },
   "license": "MIT"
 }

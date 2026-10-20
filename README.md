@@ -73,7 +73,18 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 When a module starts, it shows the same **Which movie?** list as the TV apps, loaded from the online
 JSON file. The modules start on the site's tiny `robots.txt` page, so no home page, images or scripts load
 before you pick; only the chosen movie's page opens. Pick a movie with Up/Down/OK, and Back while watching
-brings the list back. **Exit app** (or Back on the list) closes the app.
+brings the list back. In the updated working-tree scripts, **Exit app** (or Back on the list)
+returns to TizenBrew's module screen through the custom service bridge, rather than closing
+TizenBrew to the Samsung launcher. The published `v1.4.0` tag is unchanged until a new release
+is published. A missing/disconnected return bridge shows an error on the list instead of
+falling back to the TV launcher.
+
+Prime autoplay uses the stable playback test/automation IDs for both **Watch now** and
+**Resume Episode** links. It ignores hidden/disabled controls and preserves the link's
+existing `autoplay`, resume-time (`t`), and tracking parameters. Artwork suppression leaves
+video/audio `<source>` elements intact. Required player JavaScript, styles, manifests and DRM
+requests are not blanket-blocked: removing those would prevent real playback. DOM image
+suppression is not a guarantee that every image request is prevented before it starts.
 
 Use the version-tag names (`@v1.4.0`). A tag never changes, so jsDelivr can't serve a stale copy. To
 update, remove the module and add it again with the new tag. `@main` works too, but jsDelivr can keep
@@ -86,6 +97,68 @@ GitHub files for up to 12 hours; to refresh sooner, open
 `hotstar/package.json` and `hotstar/userScript.js`.
 
 ## Development
+
+### Local TizenBrew preview with real websites
+
+Requirements: Node.js 18+ and an installed desktop Chrome or Edge. The preview uses the
+generated TizenBrew UI in `tv-app/dist/tizenbrew/debug-logs/ui/dist`; if it is missing, build
+the custom widget first with `python tv-app\build-debug-tizenbrew.py`.
+
+From the repository root:
+
+```powershell
+npm install
+npm run local:live
+```
+
+This opens the actual TizenBrew web UI in a new, isolated desktop-browser context. The terminal
+prints its loopback URL. The window opens maximized and follows its actual size rather than
+emulating a fixed TV viewport, so the top navigation and bottom controls remain reachable.
+Click **Restart service** in that local UI to enable the **local adapter**,
+then choose Prime, JioHotstar or Google. These modules load **real websites** and inject the
+matching **working-tree script**, not the version downloaded from a release tag. The local
+module names are labelled `[local source]`; arbitrary third-party/native module services are
+not executed. No TV, SDB connection, or real Tizen service is contacted or started.
+
+- Enter credentials yourself on the real site's sign-in page if needed. The runner does not
+  collect credentials, record browsing traces, or persist your account profile.
+- Arrows/Enter work normally; **Esc is mapped to TV Back**. First Back during playback opens
+  the movie list; Back on the list or Exit app returns to the local TizenBrew UI.
+- The preview supplies device/service APIs only to the local UI. It does **not** mock video,
+  XHR, or fetch on the real Prime/Hotstar pages.
+- The browser is real, but the Tizen APIs are an adapter, not a Tizen emulator. Account,
+  regional restrictions, DRM, codecs and actual Samsung-TV behavior still need verification.
+- Close the browser or press Ctrl+C to stop. Restart the preview after editing scripts.
+  Its local service state and catalog are reset each run.
+- Chrome is preferred when installed; to use Edge:
+
+  ```powershell
+  $env:LOCAL_BREW_BROWSER = 'msedge'
+  npm run local:live
+  ```
+
+The implementation is in `local-tizenbrew.js`. It serves only the built UI over a loopback
+HTTP listener and substitutes a dummy token in served UI assets. Do not publish the generated
+UI/widget on disk: that original build still contains the private diagnostic token.
+
+### Repeatable local regression tests
+
+```powershell
+npm test
+npm run test:local
+npm run test:local:headed
+```
+
+`npm test` runs fast unit tests. The Playwright suite uses the complete userscripts against
+**offline fixtures**, separately from the real-site preview above. Every application request
+is intercepted; no real account, stream, or TV service is used. It covers the supplied Watch/Resume
+markup, disabled/hidden controls, resume-time preservation, artwork/media-source handling,
+movie selection, first-Back behavior, Exit-to-TizenBrew, and missing-bridge errors.
+The desktop-bar layout check also exercises small windows; it is skipped with an explicit
+message if the generated TizenBrew UI has not been built.
+The fixtures and browser configuration are in `tests/local` and `playwright.config.js`.
+Failure screenshots/traces go to `test-results/local`; the HTML report is in `playwright-report`.
+These generated directories are ignored by Git.
 
 ### Google injection smoke test
 
