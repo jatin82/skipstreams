@@ -1,0 +1,120 @@
+diff --git a/tizenbrew-app/TizenBrew/tizenbrew-ui/src/pages/ModuleManager.jsx b/tizenbrew-app/TizenBrew/tizenbrew-ui/src/pages/ModuleManager.jsx
+index 60a5570..482ac10 100644
+--- a/tizenbrew-app/TizenBrew/tizenbrew-ui/src/pages/ModuleManager.jsx
++++ b/tizenbrew-app/TizenBrew/tizenbrew-ui/src/pages/ModuleManager.jsx
+@@ -130,42 +130,95 @@ function AddModule() {
+     const loc = useLocation();
+     const { state } = useContext(GlobalStateContext);
+     const ref = useRef(null);
++    const buttonRef = useRef(null);
++    const submitted = useRef(false);
+     const { t } = useTranslation();
++    const { ref: focusRef, focused, focusSelf } = useFocusable({
++        focusKey: 'add-module-submit'
++    });
++
++    function submit(e) {
++        e.preventDefault();
++        const moduleName = ref.current.value.trim();
++        if (submitted.current) return;
++        if (!moduleName) {
++            ref.current.setCustomValidity(t('moduleManager.moduleName', { type: loc.query.type }));
++            ref.current.reportValidity();
++            return;
++        }
++        if (!state.client || state.client.socket.readyState !== 1) {
++            alert(t('moduleManager.connectionError', { defaultValue: 'Not connected to TizenBrew. Please reopen the app and try again.' }));
++            return;
++        }
++        submitted.current = true;
++        state.client.send({
++            type: Events.ModuleAction,
++            payload: {
++                action: 'add',
++                module: `${loc.query.type}/${moduleName}`
++            }
++        });
++        state.client.send({
++            type: Events.GetModules,
++            payload: true
++        });
++        loc.route('/tizenbrew-ui/dist/index.html/module-manager');
++        setFocus('sn:focusable-item-1');
++    }
+ 
+     useEffect(() => {
+         ref.current.focus();
+     }, [ref]);
+     return (
+         <div className="relative isolate lg:px-8">
+-            <div className="mx-auto flex flex-wrap justify-center gap-4 top-4 relative">
+-                <ItemBasic>
++            <form onSubmit={submit} className="mx-auto flex flex-col items-center gap-4 top-4 relative">
++                <div className="bg-gray-900 rounded-3xl p-8 w-full max-w-3xl">
+                     <input
+                         type="text"
+                         ref={ref}
+                         value={name}
++                        required
++                        aria-label={t('moduleManager.moduleName', { type: loc.query.type })}
+                         className="w-full p-2 rounded-lg bg-gray-800 text-gray-200"
+-                        onChange={(e) => setName(e.target.value)}
+-                        onBlur={(e) => {
+-                            if (name) {
+-                                state.client.send({
+-                                    type: Events.ModuleAction,
+-                                    payload: {
+-                                        action: 'add',
+-                                        module: `${loc.query.type}/${name}`
+-                                    }
+-                                });
++                        onInput={(e) => {
++                            e.currentTarget.setCustomValidity('');
++                            setName(e.currentTarget.value);
++                        }}
++                        onKeyDown={(e) => {
++                            if (e.keyCode === 10009) return;
++                            e.stopPropagation();
++                            if (e.keyCode === 13 || e.keyCode === 40 || e.keyCode === 9) {
++                                e.preventDefault();
++                                ref.current.blur();
++                                focusSelf();
++                                buttonRef.current.focus();
+                             }
+-                            state.client.send({
+-                                type: Events.GetModules,
+-                                payload: true
+-                            });
+-                            loc.route('/tizenbrew-ui/dist/index.html/module-manager');
+-                            setFocus('sn:focusable-item-1');
+                         }}
+                         placeholder={t('moduleManager.moduleName', { type: loc.query.type })}
+                     />
+-                </ItemBasic>
+-            </div>
++                </div>
++                <div ref={focusRef}>
++                    <button
++                        ref={buttonRef}
++                        type="submit"
++                        className={classNames('rounded-3xl bg-indigo-600 text-white px-8 py-4 text-2xl', focused ? 'focus' : '')}
++                        onFocus={() => focusSelf()}
++                        onKeyDown={(e) => {
++                            if (e.keyCode === 13) {
++                                e.preventDefault();
++                                e.stopPropagation();
++                                e.currentTarget.click();
++                            } else if (e.keyCode === 38) {
++                                e.preventDefault();
++                                e.stopPropagation();
++                                ref.current.focus();
++                            }
++                        }}
++                    >
++                        {t('moduleManager.addButton', { defaultValue: 'Add module' })}
++                    </button>
++                </div>
++            </form>
+         </div>
+     )
+ }

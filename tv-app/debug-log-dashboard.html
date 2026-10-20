@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tizen live debug logs</title>
+<style>
+body { background: #111827; color: #e5e7eb; font: 14px system-ui, sans-serif; margin: 20px; }
+header { position: sticky; top: 0; background: #111827; padding-bottom: 12px; }
+h1 { font-size: 22px; } #status { overflow-wrap: anywhere; }
+input, select, button, a { margin: 4px; padding: 8px; }
+input { width: min(400px, 80%); } a { color: #93c5fd; }
+#logs { padding: 0; list-style: none; }
+li { border-bottom: 1px solid #374151; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: Consolas, monospace; }
+.error, .assert { color: #fca5a5; } .warning, .warn { color: #fde68a; }
+small { display: block; color: #9ca3af; }
+</style>
+</head>
+<body>
+<header>
+<h1>Tizen live debug logs</h1>
+<p id="status" role="status">Connecting...</p>
+<input id="filter" aria-label="Filter logs" placeholder="Filter text, URL, or [PrimeTizen]">
+<select id="level" aria-label="Log level">
+<option value="">All levels</option>
+<option>log</option><option>info</option><option>debug</option>
+<option>warn</option><option>warning</option><option>error</option><option>assert</option>
+</select>
+<button id="pause">Pause display</button>
+<button id="clear">Clear display</button>
+<a href="/logs.json">Download logs</a>
+<p>Last 1,000 events, in memory only. Capture begins when the debugger attaches. Keep this server on a trusted LAN.</p>
+</header>
+<ul id="logs" aria-label="Console logs"></ul>
+<script>
+'use strict';
+const list = document.getElementById('logs');
+const filter = document.getElementById('filter');
+const level = document.getElementById('level');
+const status = document.getElementById('status');
+let entries = [];
+let paused = false;
+let scheduled = false;
+function render() {
+	scheduled = false;
+	if (paused) return;
+	const fragment = document.createDocumentFragment();
+	const query = filter.value.toLowerCase();
+	for (const entry of entries) {
+		if (level.value && entry.level !== level.value) continue;
+		if (query && !(entry.text + ' ' + entry.url).toLowerCase().includes(query)) continue;
+		const row = document.createElement('li');
+		row.className = entry.level;
+		row.textContent = '[' + entry.time + '] ' + entry.level.toUpperCase() + ' ' + entry.text;
+		const source = document.createElement('small');
+		source.textContent = entry.url;
+		row.appendChild(source);
+		fragment.appendChild(row);
+	}
+	list.replaceChildren(fragment);
+}
+function refresh() {
+	if (!scheduled) { scheduled = true; requestAnimationFrame(render); }
+}
+filter.addEventListener('input', refresh);
+level.addEventListener('change', refresh);
+document.getElementById('pause').onclick = function () {
+	paused = !paused;
+	this.textContent = paused ? 'Resume display' : 'Pause display';
+	refresh();
+};
+document.getElementById('clear').onclick = function () { entries = []; refresh(); };
+const stream = new EventSource('/events');
+stream.addEventListener('snapshot', event => {
+	const data = JSON.parse(event.data);
+	entries = data.logs;
+	status.textContent = data.status;
+	refresh();
+});
+stream.addEventListener('log', event => {
+	entries.push(JSON.parse(event.data));
+	if (entries.length > 1000) entries.shift();
+	refresh();
+});
+stream.addEventListener('status', event => { status.textContent = JSON.parse(event.data); });
+stream.onerror = function () { status.textContent = 'Dashboard disconnected; reconnecting...'; };
+</script>
+</body>
+</html>

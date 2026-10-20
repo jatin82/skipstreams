@@ -1,9 +1,12 @@
 {
   "name": "prime-tizen-tv-app",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.4.0",
   "description": "Samsung Tizen TV app (.wgt) for Prime Video plus a PC companion that injects the ad-skip/remote-cursor script.",
   "scripts": {
+    "debug-logs": "node debug-log-server.js",
+    "read-tv-diagnostics": "node read-tv-diagnostics.js",
+    "test-debug-logs": "node --test debug-log-server.test.js tizenbrew-service-diagnostics.test.js tizenbrew-device-info.test.js tizenbrew-service-controls.test.js tizenbrew-recovery.test.js",
     "package": "node build.js",
     "install-tv": "node build.js --install",
     "watch": "node companion.js",
