@@ -69,7 +69,7 @@ function installPlatformMock() {
 	});
 }
 
-function playbackLink({ mode, automationOnly, disabled, hidden = false, ignoreClicks = 0, requirePress = false }) {
+function playbackLink({ mode, automationOnly, disabled, hidden = false, ignoreClicks = 0, requirePress = false, appLink = false }) {
 	const resume = mode === 'resume';
 	const time = hidden ? 999 : resume ? 125 : 0;
 	const label = hidden ? 'Hidden duplicate' : resume ? 'Resume Episode 1' : 'Watch now';
@@ -78,14 +78,14 @@ function playbackLink({ mode, automationOnly, disabled, hidden = false, ignoreCl
 		${automationOnly ? '' : 'data-testid="dp-atf-play-button"'}
 		data-automation-id="dp-atf-play-button" role="button" aria-disabled="${disabled ? 'true' : 'false'}"
 		${disabled ? 'data-enable-after="600"' : ''} ${hidden ? 'style="visibility:hidden"' : ''}
-		href="/detail/0OML6W0QFI45I4D5HK2UTCGGFQ?autoplay=1&amp;t=${time}&amp;ref_=local-fixture">
+		href="${appLink ? 'https://app.primevideo.com/watch' : '/detail/0OML6W0QFI45I4D5HK2UTCGGFQ'}?autoplay=1&amp;t=${time}&amp;ref_=local-fixture">
 		<span><span>${label}</span></span></a>`;
 }
 
 function documentHtml(site, options, picker) {
 	const prime = site === 'prime';
 	const controls = prime && !picker ? (options.hiddenDuplicate ? playbackLink({ ...options, hidden: true }) : '') +
-		`<div class="mVyVPA BLmu_g dv-dp-node-playback">${options.mode === 'resume' ? '<div class="_3AXaee">' : ''}
+		`${options.appDuplicate ? playbackLink({ ...options, appLink: true }) : ''}<div class="mVyVPA BLmu_g dv-dp-node-playback">${options.mode === 'resume' ? '<div class="_3AXaee">' : ''}
 		${playbackLink(options)}${options.mode === 'resume' ?
 			'<span class="fbl-progress-bar"><span aria-valuenow="4" style="width:4%"></span></span></div>' : ''}</div>` : '';
 	return `<!doctype html><html><head><title>LOCAL ${site} fixture</title>

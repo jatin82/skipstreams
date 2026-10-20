@@ -157,6 +157,12 @@
 				var matches = document.querySelectorAll(PLAY_BUTTONS[i]);
 				for (var j = 0; j < matches.length; j++) {
 					var el = matches[j];
+					if (el.href) {
+						var target = new URL(el.href, location.href);
+						if (!/^https?:$/.test(target.protocol) ||
+							! /^(?:www\.)?primevideo\.com$/i.test(target.hostname) ||
+							/\/splash\//i.test(target.pathname)) continue;
+					}
 					if (isVisible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true') return el;
 				}
 			}
@@ -1393,6 +1399,7 @@
 		function wanted() {
 			if (IS_PRIME) {
 				if (!/(^|\.)primevideo\.com$/i.test(location.hostname)) return false;
+				if (/\/splash\//i.test(location.pathname)) return false;
 				return !/\/(detail|dp|watch|auth|signin|ap)\b/i.test(location.pathname);
 			}
 			// A pending target from an unfinished login is honoured for 15 minutes, then the list shows again.
@@ -1538,6 +1545,17 @@
 			isOpen: function () { return !!root; },
 			// First page of a TizenBrew launch: ask which movie before the site's home page loads.
 			startIfNeeded: function () {
+				if (IS_PRIME && /\/splash\/t\/getTheApp\b/i.test(location.pathname)) {
+					trace('prime-app-redirect', { url: pagePath(location.href) });
+					onReady(function () {
+						var notice = el('div', 'position:fixed;top:20px;left:20px;right:20px;padding:24px;' +
+							'z-index:2147483647;background:#511;color:#fff;font:24px sans-serif;',
+							'Prime redirected to Get the app instead of web playback. Update TizenBrew to the desktop-UA build, then reopen Prime. Back returns to the movie list.');
+						notice.id = 'prime-tizen-playback-error';
+						document.body.appendChild(notice);
+					});
+					return;
+				}
 				var show = !WITH_COMPANION && wanted();
 				trace('picker-start-decision', { show: show, companion: WITH_COMPANION, url: pagePath(location.href) });
 				if (!show) return;

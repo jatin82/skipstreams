@@ -1,6 +1,27 @@
 const { test, expect } = require('@playwright/test');
 const { createFixture, BREW_HOME } = require('./fixtures');
 
+test('Prime rejects app playback links and selects the web playback control', async ({ page }) => {
+	const fixture = await createFixture(page, 'prime', { appDuplicate: true });
+	await fixture.openMovie();
+	await expect.poll(() => page.evaluate(() => window.__localTest.clicks.length)).toBe(1);
+	expect(new URL(await page.evaluate(() => window.__localTest.clicks[0].href)).hostname).toBe('www.primevideo.com');
+});
+
+test('Prime never clicks an app-only playback control', async ({ page }) => {
+	const fixture = await createFixture(page, 'prime', { appLink: true });
+	await fixture.openMovie();
+	await page.waitForTimeout(1200);
+	expect(await page.evaluate(() => window.__localTest.clicks.length)).toBe(0);
+});
+
+test('Prime app splash shows an error instead of reopening the movie selector', async ({ page }) => {
+	await createFixture(page, 'prime');
+	await page.goto('https://www.primevideo.com/splash/t/getTheApp');
+	await expect(page.locator('#prime-tizen-playback-error')).toContainText('instead of web playback');
+	await expect(page.locator('#prime-tizen-movie-list')).toHaveCount(0);
+});
+
 test('Prime traces picker navigation and Back without logging query parameters', async ({ page }) => {
 	const traces = [];
 	page.on('console', message => {

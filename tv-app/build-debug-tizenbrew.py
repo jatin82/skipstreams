@@ -206,6 +206,16 @@ function connectExistingService(context) {
                           "            this.connectionError('The module debugger is not ready. Use Check service to recover it.');\n"
                           "            return false;\n"
                           "        }\n"
+                          "        if (data.type === Events.LaunchModule) {\n"
+                          "            const prime = /^https?:\\/\\/(?:www\\.)?primevideo\\.com(?:\\/|$)/i.test(data.payload.appPath || '');\n"
+                          "            try {\n"
+                          "                tizen.websetting.setUserAgentString(prime ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' : '');\n"
+                          "                console.info('[TizenBrew UI] Module user agent: ' + (prime ? 'desktop Prime' : 'platform default'));\n"
+                          "            } catch (error) {\n"
+                          "                this.connectionError('Could not configure module browser user agent: ' + error.message);\n"
+                          "                return false;\n"
+                          "            }\n"
+                          "        }\n"
                           "        try { this.socket.send(JSON.stringify(data)); return true; }\n"
                           "        catch (error) { this.connectionError('Service send failed: ' + error.message, true); return false; }")
     client, count = re.subn(
@@ -376,6 +386,7 @@ def build(debug_app=False):
         patched = build_ui(original, config)
         if debug_app:
             patched["config.xml"] = debug_app_manifest(original.read("config.xml").decode("utf-8")).encode("utf-8")
+            patched["icon.png"] = (ROOT / "tb-debug-icon.png").read_bytes()
         for name in targets:
             content = original.read(name).decode("utf-8")
             if name.endswith("/dist/index.js") or name.endswith("/utils/debugger.js"):

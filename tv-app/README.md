@@ -6,7 +6,8 @@
 builds `dist\tizenbrew\tb-debug\TB-Debug.wgt`. Sign it with `Monitor32` before installation.
 It installs alongside normal TizenBrew as `TBDebug001.TizenBrewStandalone`, with a separate
 service `TBDebug001.StandaloneService` and Windows logging enabled. Normal builds still
-default to logging disabled. The private receiver configuration stays in the ignored
+default to logging disabled. TB-Debug uses the original TizenBrew icon with a bug badge from `tb-debug-icon.png`;
+the normal TizenBrew icon is unchanged. The private receiver configuration stays in the ignored
 build directory; do not publish it or the signed widget.
 
 Start its receiver from the repository root:
@@ -18,7 +19,7 @@ node tv-app\debug-log-server.js --config tv-app\dist\tizenbrew\tb-debug\receiver
 The dashboard is `http://192.168.29.126:8088`. Stop the normal TizenBrew service before
 using TB-Debug: both variants use the same TV service ports. Service startup remains
 manual through **Restart service**. The separate app may need its modules added again;
-use `jatin82/skipstreams@04` for Prime navigation diagnostics.
+use `jatin82/skipstreams@05` for Prime web playback and navigation diagnostics.
 
 Userscript `[PrimeTizen] Trace` entries correlate each document's startup, lifecycle,
 picker decisions/selection, Back events and autoplay state. New trace URL fields omit
