@@ -25,6 +25,23 @@
 	// The PC companion sets __ptTargetUrl before injecting; TizenBrew doesn't.
 	var WITH_COMPANION = window.__ptTargetUrl !== undefined;
 
+	function pagePath(url) {
+		var parsed = new URL(url, location.href);
+		return parsed.origin + parsed.pathname;
+	}
+
+	var traceId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+	function trace(event, details) {
+		log('Trace', traceId, event, JSON.stringify(details || {}));
+	}
+	trace('document-start', { url: pagePath(location.href), referrer: document.referrer ? pagePath(document.referrer) : '',
+		ready: document.readyState, companion: WITH_COMPANION });
+	['pageshow', 'pagehide', 'beforeunload', 'popstate', 'hashchange'].forEach(function (name) {
+		window.addEventListener(name, function (event) {
+			trace(name, { url: pagePath(location.href), persisted: !!event.persisted });
+		});
+	});
+
 	function onReady(fn) {
 		if (document.body) fn();
 		else document.addEventListener('DOMContentLoaded', fn, { once: true });
@@ -178,6 +195,8 @@
 				if (!IS_PRIME || !/\/(?:detail|dp)\//.test(location.pathname)) return;
 				var startedAt = Date.now();
 				var lastClickAt = 0;
+				var lastState = '';
+				trace('autoplay-start', { url: pagePath(location.href) });
 				var poll = setInterval(function () {
 					if (Date.now() - startedAt > GIVE_UP_MS) {
 						log(lastClickAt ? 'Prime Watch/Resume clicks did not start playback within 30 seconds' :
@@ -185,6 +204,13 @@
 						return clearInterval(poll);
 					}
 					var video = getMainVideo();
+					var state = JSON.stringify({ player: playerIsOpen(), picker: PagePicker.isOpen(),
+						video: video ? { paused: video.paused, ready: video.readyState,
+							time: video.currentTime, inPlayer: !!video.closest('#dv-web-player') } : null });
+					if (state !== lastState) {
+						trace('autoplay-state', JSON.parse(state));
+						lastState = state;
+					}
 					if (video && video.closest('#dv-web-player') && !video.paused) return clearInterval(poll);
 					if (playerIsOpen() || PagePicker.isOpen()) return;
 					var button = findPlayButton();
@@ -192,6 +218,8 @@
 					if (!button && Date.now() - startedAt > SIGNIN_AFTER_MS && signInFirst()) return clearInterval(poll);
 					if (!button || Date.now() - lastClickAt < 3000) return;
 					lastClickAt = Date.now();
+					trace('autoplay-click', { url: pagePath(button.href || location.href),
+						disabled: button.getAttribute('aria-disabled'), elapsed: Date.now() - startedAt });
 					log('Playing', button.getAttribute('aria-label') || button.textContent.trim());
 					// The first click can arrive before Prime has attached its player handlers.
 					Pointer.fireClick(button);
@@ -808,6 +836,7 @@
 	// "Show movie list"; fallback: walk history back to the launcher page. Without the companion
 	// (TizenBrew), the list is shown in the page itself.
 	function showMovieList() {
+		trace('show-movie-list', { url: pagePath(location.href), companion: WITH_COMPANION });
 		var video = getMainVideo();
 		if (video) video.pause();
 		if (!WITH_COMPANION) {
@@ -988,6 +1017,8 @@
 				handled = true;
 				break;
 			case KEY.BACK:
+				trace('back-key', { trusted: event.isTrusted, repeat: event.repeat,
+					target: event.target && event.target.tagName, url: pagePath(location.href) });
 				handleBack();
 				handled = true;
 				break;
@@ -1469,6 +1500,7 @@
 		function choose() {
 			var url = urls[sel];
 			if (!url) return exitApp();
+			trace('picker-choose', { index: sel, target: pagePath(url), from: pagePath(location.href) });
 			log('Picked', url);
 			// Hotstar: come back to this movie after login / profile selection.
 			if (!IS_PRIME) {
@@ -1487,6 +1519,7 @@
 		}
 
 		function open() {
+			trace('picker-open', { alreadyOpen: !!root, url: pagePath(location.href) });
 			if (root) return;
 			var mount = function () {
 				if (root) return;
@@ -1505,7 +1538,10 @@
 			isOpen: function () { return !!root; },
 			// First page of a TizenBrew launch: ask which movie before the site's home page loads.
 			startIfNeeded: function () {
-				if (WITH_COMPANION || !wanted()) return;
+				var show = !WITH_COMPANION && wanted();
+				trace('picker-start-decision', { show: show, companion: WITH_COMPANION, url: pagePath(location.href) });
+				if (!show) return;
+				trace('picker-stop-page-loading');
 				try { window.stop(); } catch (e) { /* keep loading */ }
 				open();
 			},

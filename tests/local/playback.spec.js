@@ -1,6 +1,25 @@
 const { test, expect } = require('@playwright/test');
 const { createFixture, BREW_HOME } = require('./fixtures');
 
+test('Prime traces picker navigation and Back without logging query parameters', async ({ page }) => {
+	const traces = [];
+	page.on('console', message => {
+		if (message.text().includes('[PrimeTizen] Trace')) traces.push(message.text());
+	});
+	const fixture = await createFixture(page, 'prime');
+	await fixture.openPicker();
+	await expect(page.locator('#prime-tizen-movie-list')).toContainText('Movie 1');
+	await page.keyboard.press('Enter');
+	await expect.poll(() => page.locator('video').evaluate(video => video.paused)).toBe(false);
+	await page.keyboard.press('Escape');
+	await expect(page.locator('#prime-tizen-movie-list')).toBeVisible();
+	for (const event of ['document-start', 'picker-start-decision', 'picker-choose', 'autoplay-click', 'back-key', 'show-movie-list']) {
+		expect(traces.some(line => line.includes(event)), event).toBe(true);
+	}
+	expect(traces.join('\n')).not.toContain('ref_=');
+	expect(traces.join('\n')).not.toContain('autoplay=1');
+});
+
 for (const mode of ['watch', 'resume']) {
 	test('Prime selects a movie and clicks ' + mode + ' without changing its start time', async ({ page }) => {
 		const fixture = await createFixture(page, 'prime', { mode });

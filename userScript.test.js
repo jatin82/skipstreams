@@ -47,6 +47,8 @@ function fixture(filename, options = {}) {
 		isTextInput: () => !!options.textInput, location, history: { length: 1 },
 		sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
 		log: (...args) => messages.push(args.join(' ')),
+		trace: (...args) => messages.push(args.join(' ')),
+		pagePath: url => new URL(url).origin + new URL(url).pathname,
 		setTimeout(fn, ms) { const id = timers.size + 1; timers.set(id, { fn, ms }); return id; },
 		clearTimeout(id) { timers.delete(id); },
 		tizen: { application: { getCurrentApplication: () => ({ exit() { calls.exit++; } }) } },

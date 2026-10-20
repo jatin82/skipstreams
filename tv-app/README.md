@@ -1,5 +1,31 @@
 # Prime Video AdSkip: Samsung TV app + PC companion
 
+## Separate TB-Debug app
+
+`python -B tv-app\build-debug-tizenbrew.py --debug-app` (from the repository root)
+builds `dist\tizenbrew\tb-debug\TB-Debug.wgt`. Sign it with `Monitor32` before installation.
+It installs alongside normal TizenBrew as `TBDebug001.TizenBrewStandalone`, with a separate
+service `TBDebug001.StandaloneService` and Windows logging enabled. Normal builds still
+default to logging disabled. The private receiver configuration stays in the ignored
+build directory; do not publish it or the signed widget.
+
+Start its receiver from the repository root:
+
+```powershell
+node tv-app\debug-log-server.js --config tv-app\dist\tizenbrew\tb-debug\receiver.json --port 8088
+```
+
+The dashboard is `http://192.168.29.126:8088`. Stop the normal TizenBrew service before
+using TB-Debug: both variants use the same TV service ports. Service startup remains
+manual through **Restart service**. The separate app may need its modules added again;
+use `jatin82/skipstreams@04` for Prime navigation diagnostics.
+
+Userscript `[PrimeTizen] Trace` entries correlate each document's startup, lifecycle,
+picker decisions/selection, Back events and autoplay state. New trace URL fields omit
+query strings and fragments. Existing page/service logs may still contain full URLs,
+so treat captured logs as private. Reproduce the unexpected return once and inspect
+the trace around `picker-choose`, `document-start`, `back-key` and `picker-open`.
+
 ## Custom TizenBrew module button
 
 [tizenbrew-module-button.patch](tizenbrew-module-button.patch) patches the UI of

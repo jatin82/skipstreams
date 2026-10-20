@@ -1,6 +1,7 @@
 """Patch the existing custom TizenBrew package without changing its UI or modules."""
 
 import json
+import argparse
 import os
 import re
 from pathlib import Path
@@ -320,19 +321,32 @@ def instrument_injection(content):
     return content[:start] + section + content[end:]
 
 
-def build():
-    OUT.mkdir(parents=True, exist_ok=True)
-    config_path = OUT / "receiver.json"
+def debug_app_manifest(content):
+    content = replace_once(content, 'id="xvvl3S1bvH.TizenBrewStandalone" package="xvvl3S1bvH"',
+                           'id="TBDebug001.TizenBrewStandalone" package="TBDebug001"')
+    content = replace_once(content, 'id="xvvl3S1bvH.StandaloneService"',
+                           'id="TBDebug001.StandaloneService"')
+    return replace_once(content, "<name>TizenBrewNextGeneration</name>", "<name>TB-Debug</name>")
+
+
+def build(debug_app=False):
+    out = OUT.parent / "tb-debug" if debug_app else OUT
+    out.mkdir(parents=True, exist_ok=True)
+    config_path = out / "receiver.json"
     if config_path.exists():
         config = json.loads(config_path.read_text(encoding="utf-8"))
     else:
-        config = {"host": "192.168.29.126", "port": 8087, "token": secrets.token_hex(32), "loggingEnabled": False}
+        config = {"host": "192.168.29.126", "port": 8088 if debug_app else 8087,
+                  "token": secrets.token_hex(32), "loggingEnabled": False}
         config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     if "loggingEnabled" not in config:
         config["loggingEnabled"] = False
         config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     if not isinstance(config["loggingEnabled"], bool):
         raise ValueError("loggingEnabled must be a boolean")
+    if debug_app:
+        config["loggingEnabled"] = True
+        config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     if not isinstance(config.get("token"), str) or len(config["token"]) < 32:
         raise ValueError("Invalid receiver upload token")
     source = FORWARDER.read_text(encoding="utf-8")
@@ -357,9 +371,11 @@ def build():
         "service-nextgen/service/index.js",
     }
     html_name = "tizenbrew-ui/dist/index.html"
-    result = OUT / "TizenBrew-DebugLogs.wgt"
+    result = out / ("TB-Debug.wgt" if debug_app else "TizenBrew-DebugLogs.wgt")
     with zipfile.ZipFile(BASE) as original:
         patched = build_ui(original, config)
+        if debug_app:
+            patched["config.xml"] = debug_app_manifest(original.read("config.xml").decode("utf-8")).encode("utf-8")
         for name in targets:
             content = original.read(name).decode("utf-8")
             if name.endswith("/dist/index.js") or name.endswith("/utils/debugger.js"):
@@ -417,4 +433,7 @@ def build():
 
 
 if __name__ == "__main__":
-    build()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug-app", action="store_true",
+                        help="Build a separate TB-Debug app with Windows logging enabled")
+    build(parser.parse_args().debug_app)

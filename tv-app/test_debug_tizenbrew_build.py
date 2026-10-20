@@ -11,6 +11,18 @@ spec.loader.exec_module(build)
 
 
 class BootstrapTests(unittest.TestCase):
+    def test_debug_app_has_distinct_app_and_service_ids(self):
+        original = ('<widget><tizen:application id="xvvl3S1bvH.TizenBrewStandalone" package="xvvl3S1bvH"/>'
+                    '<tizen:service id="xvvl3S1bvH.StandaloneService"/>'
+                    '<name>TizenBrewNextGeneration</name></widget>')
+        result = build.debug_app_manifest(original)
+        self.assertIn('id="TBDebug001.TizenBrewStandalone" package="TBDebug001"', result)
+        self.assertIn('id="TBDebug001.StandaloneService"', result)
+        self.assertIn("<name>TB-Debug</name>", result)
+        self.assertNotIn("xvvl3S1bvH", result)
+        with self.assertRaises(ValueError):
+            build.debug_app_manifest(original.replace("TizenBrewNextGeneration", "Unexpected"))
+
     def test_github_prefix_is_editable_and_incomplete_default_is_rejected(self):
         form = """function AddModule() {
     const [name, setName] = useState('');

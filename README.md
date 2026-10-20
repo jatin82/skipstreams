@@ -52,7 +52,7 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 
 | Module | Add in TizenBrew as | Opens |
 |---|---|---|
-| Prime Video (Ad Skip) | `jatin82/skipstreams@03` | primevideo.com |
+| Prime Video (Ad Skip) | `jatin82/skipstreams@04` | primevideo.com |
 | JioHotstar | `jatin82/skipstreams@01/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
 
 1. **Install TizenBrew on the TV** following the
@@ -65,7 +65,7 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
    to the PC's IP.
 3. Open **TizenBrew → Module Manager → Add GitHub module** and add each module from the table.
    The custom widget prefills `jatin82/skipstreams@`, with the cursor at the end. Enter only the
-   remaining part, such as `03` or `01/hotstar`. The field is editable if you want another
+   remaining part, such as `04` or `01/hotstar`. The field is editable if you want another
    repository; replace the whole value when pasting a full address. The prefix alone cannot be
    submitted, and **Add NPM Module** still starts with an empty field.
 4. If Prime Video shows an "unsupported browser" page, set a desktop Chrome user agent in TizenBrew's
@@ -93,8 +93,8 @@ requests are not blanket-blocked: removing those would prevent real playback. DO
 suppression is not a guarantee that every image request is prevented before it starts.
 
 Release tags use two digits without a prefix or dots, starting at `01`. Both modules retain
-semantic package versions internally (`1.5.2` for Prime `03`, `1.5.0` for JioHotstar `01`) for compatibility.
-Use the release-tag names (`@03` for Prime, `@01/hotstar` for JioHotstar). A tag never changes, so jsDelivr can't serve a stale copy. To
+semantic package versions internally (`1.5.3` for Prime `04`, `1.5.0` for JioHotstar `01`) for compatibility.
+Use the release-tag names (`@04` for Prime, `@01/hotstar` for JioHotstar). A tag never changes, so jsDelivr can't serve a stale copy. To
 update, remove the module and add it again with the new tag. `@main` works too, but jsDelivr can keep
 an old copy for up to 12 hours, and purges are rate-limited. The plain `jatin82/skipstreams` address
 can stay stuck on an old version for a long time.
