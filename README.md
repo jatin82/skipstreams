@@ -40,6 +40,11 @@ DevTools protocol, the same way TizenTube works for YouTube.
 
 ## Install
 
+During playback, **Volume Up** also unmutes a muted video while leaving the TV's normal
+volume adjustment unchanged. It does not change the player's volume level or resume
+paused/ended media. This is available in release `08`; existing pinned release URLs
+remain unchanged.
+
 There are two ways to install it:
 
 - **Option A: Samsung app (`.wgt`) + PC companion**. See [tv-app/README.md](./tv-app/README.md).
@@ -53,8 +58,8 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 
 | Module | Add in TizenBrew as | Opens |
 |---|---|---|
-| Prime Video (Ad Skip) | `jatin82/skipstreams@07` | primevideo.com |
-| JioHotstar | `jatin82/skipstreams@07/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
+| Prime Video (Ad Skip) | `jatin82/skipstreams@08` | primevideo.com |
+| JioHotstar | `jatin82/skipstreams@08/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
 
 1. **Install TizenBrew on the TV** following the
    [TizenBrew guide](https://github.com/reisxd/TizenBrew/blob/main/docs/README.md). With a Samsung
@@ -66,11 +71,20 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
    to the PC's IP.
 3. Open **TizenBrew → Module Manager → Add GitHub module** and add each module from the table.
    The custom widget prefills `jatin82/skipstreams@`, with the cursor at the end. Enter only the
-   remaining part, such as `07` or `07/hotstar`. The field is editable if you want another
+   remaining part, such as `08` or `08/hotstar`. The field is editable if you want another
    repository; replace the whole value when pasting a full address. The prefix alone cannot be
    submitted, and **Add NPM Module** still starts with an empty field.
 4. If Prime Video shows an "unsupported browser" page, set a desktop Chrome user agent in TizenBrew's
    **User-Agent settings**.
+
+### Release 08: Volume Up unmute
+
+Release `08` adds Volume Up unmuting during playback for both modules, retaining release
+`07`'s native Back/Exit behavior. Package versions are `1.5.7` for Prime and `1.5.2` for Hotstar.
+The pinned script URLs are:
+
+- Prime: `https://cdn.jsdelivr.net/gh/jatin82/skipstreams@08/userScript.js`
+- Hotstar: `https://cdn.jsdelivr.net/gh/jatin82/skipstreams@08/hotstar/userScript.js`
 
 ### Release 07: native application exit
 
@@ -127,8 +141,8 @@ requests are not blanket-blocked: removing those would prevent real playback. DO
 suppression is not a guarantee that every image request is prevented before it starts.
 
 Release tags use two digits without a prefix or dots, starting at `01`. Both modules retain
-semantic package versions internally (`1.5.6` for Prime `07`, `1.5.1` for JioHotstar `07`) for compatibility.
-Use the release-tag names (`@07` for Prime, `@07/hotstar` for JioHotstar). A tag never changes, so jsDelivr can't serve a stale copy. To
+semantic package versions internally (`1.5.7` for Prime `08`, `1.5.2` for JioHotstar `08`) for compatibility.
+Use the release-tag names (`@08` for Prime, `@08/hotstar` for JioHotstar). A tag never changes, so jsDelivr can't serve a stale copy. To
 update, remove the module and add it again with the new tag. `@main` works too, but jsDelivr can keep
 an old copy for up to 12 hours, and purges are rate-limited. The plain `jatin82/skipstreams` address
 can stay stuck on an old version for a long time.

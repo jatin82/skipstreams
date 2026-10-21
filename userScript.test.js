@@ -89,6 +89,65 @@ test('Prime and Hotstar retain the same shared userscript implementation', () =>
 });
 
 for (const filename of scripts) {
+	test(filename + ': Volume Up unmutes playing video without consuming native volume events', () => {
+		const script = fs.readFileSync(path.join(__dirname, filename), 'utf8');
+		const keyStart = script.indexOf('\tvar KEY = {');
+		const keyEnd = script.indexOf('\n\tvar SEEK_SECONDS', keyStart);
+		const start = script.indexOf('\tfunction onKeyDown(event) {');
+		const end = script.indexOf('\n\tvar ARROW_NAMES', start);
+		assert.ok(keyStart >= 0 && keyEnd > keyStart && start >= 0 && end > start);
+		for (const eventData of [{ keyCode: 447 }, { key: 'AudioVolumeUp' }, { key: 'VolumeUp' }]) {
+			for (const options of [{}, { repeat: true }, { picker: true }, { paused: true },
+				{ ended: true }, { muted: false }, { playerOpen: false }, { missingVideo: true },
+				{ outsidePlayer: true }, { trusted: false }]) {
+				const video = { paused: !!options.paused, ended: !!options.ended,
+					muted: options.muted !== false, volume: 0.4,
+					closest: () => options.outsidePlayer ? null : {} };
+				const context = {
+					IS_PRIME: filename === 'userScript.js',
+					PagePicker: { isOpen: () => !!options.picker },
+					playerIsOpen: () => options.playerOpen !== false,
+					getMainVideo: () => options.missingVideo ? null : video,
+					log() {},
+				};
+				vm.createContext(context);
+				vm.runInContext(script.slice(keyStart, keyEnd) + '\n' + script.slice(start, end), context);
+				context.onKeyDown({
+					isTrusted: options.trusted !== false, repeat: !!options.repeat, ...eventData,
+					preventDefault() { assert.fail('Volume Up must retain its native default'); },
+					stopImmediatePropagation() { assert.fail('Volume Up must reach native volume handling'); },
+				});
+				const shouldUnmute = !options.picker && !options.paused && !options.ended &&
+					options.playerOpen !== false && !options.missingVideo && options.trusted !== false &&
+					(filename !== 'userScript.js' || !options.outsidePlayer);
+				assert.equal(video.muted, options.muted !== false && !shouldUnmute, JSON.stringify({ eventData, options }));
+				assert.equal(video.volume, 0.4);
+			}
+		}
+	});
+
+	test(filename + ': Volume Up registration failures are reported', () => {
+		const script = fs.readFileSync(path.join(__dirname, filename), 'utf8');
+		const start = script.indexOf('\tfunction registerKeys() {');
+		const end = script.indexOf('\n\t/*', start);
+		const registered = [];
+		const messages = [];
+		const context = {
+			log: (...args) => messages.push(args.join(' ')),
+			tizen: { tvinputdevice: { registerKey(name) {
+				registered.push(name);
+				if (name === 'VolumeUp') throw new Error('Unsupported key');
+			} } },
+		};
+		context.window = { tizen: context.tizen };
+		vm.createContext(context);
+		vm.runInContext(script.slice(start, end), context);
+		context.registerKeys();
+		assert.ok(registered.includes('VolumeUp'));
+		assert.ok(registered.includes('MediaPlayPause'));
+		assert.ok(messages.some(message => message.includes('Could not register VolumeUp: Unsupported key')));
+	});
+
 	test(filename + ': first Back shows the movie list; second Back exits the app', () => {
 		const f = fixture(filename);
 		f.context.handleBack();

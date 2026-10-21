@@ -762,6 +762,7 @@
 		REWIND: 412,
 		RED: 403,
 		GREEN: 404,
+		VOLUME_UP: 447,
 	};
 	var SEEK_SECONDS = 10;
 
@@ -962,6 +963,19 @@
 		var code = event.keyCode;
 		var handled = false;
 
+		// Observe Volume Up without consuming the TV's normal volume adjustment.
+		if (code === KEY.VOLUME_UP || event.key === 'AudioVolumeUp' || event.key === 'VolumeUp') {
+			if (!PagePicker.isOpen() && playerIsOpen()) {
+				var video = getMainVideo();
+				if (video && !video.paused && !video.ended && video.muted &&
+					(!IS_PRIME || video.closest('#dv-web-player'))) {
+					video.muted = false;
+					log('Unmuting video on Volume Up');
+				}
+			}
+			return;
+		}
+
 		if (PagePicker.isOpen()) {
 			PagePicker.key(code, event.repeat);
 			event.preventDefault();
@@ -1036,6 +1050,8 @@
 	function registerKeys() {
 		try {
 			if (window.tizen && tizen.tvinputdevice) {
+				try { tizen.tvinputdevice.registerKey('VolumeUp'); }
+				catch (error) { log('Could not register VolumeUp:', error.message || String(error)); }
 				['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
 					'MediaFastForward', 'MediaRewind', 'ColorF0Red', 'ColorF1Green'].forEach(function (name) {
 					try { tizen.tvinputdevice.registerKey(name); } catch (e) { /* already registered */ }
