@@ -53,8 +53,8 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
 
 | Module | Add in TizenBrew as | Opens |
 |---|---|---|
-| Prime Video (Ad Skip) | `jatin82/skipstreams@06` | primevideo.com |
-| JioHotstar | `jatin82/skipstreams@01/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
+| Prime Video (Ad Skip) | `jatin82/skipstreams@07` | primevideo.com |
+| JioHotstar | `jatin82/skipstreams@07/hotstar` | hotstar.com/in (opens the login page if you aren't logged in, picks the Jatin profile, skips ads, Full HD, no images) |
 
 1. **Install TizenBrew on the TV** following the
    [TizenBrew guide](https://github.com/reisxd/TizenBrew/blob/main/docs/README.md). With a Samsung
@@ -66,11 +66,40 @@ This repo contains two TizenBrew modules, served from GitHub through jsDelivr:
    to the PC's IP.
 3. Open **TizenBrew → Module Manager → Add GitHub module** and add each module from the table.
    The custom widget prefills `jatin82/skipstreams@`, with the cursor at the end. Enter only the
-   remaining part, such as `06` or `01/hotstar`. The field is editable if you want another
+   remaining part, such as `07` or `07/hotstar`. The field is editable if you want another
    repository; replace the whole value when pasting a full address. The prefix alone cannot be
    submitted, and **Add NPM Module** still starts with an empty field.
 4. If Prime Video shows an "unsupported browser" page, set a desktop Chrome user agent in TizenBrew's
    **User-Agent settings**.
+
+### Release 07: native application exit
+
+Release `07` restores both Prime and Hotstar scripts exactly to tag `v1.4.1`.
+Back while watching opens the movie list; Back on that list or **Exit app** calls the native
+Tizen application exit, with `window.close()` as its fallback. This does not require the custom
+return bridge and may exit to Samsung Home rather than TizenBrew.
+
+Use `jatin82/skipstreams@07` for Prime or `jatin82/skipstreams@07/hotstar` for Hotstar.
+The pinned script URLs are:
+
+- Prime: `https://cdn.jsdelivr.net/gh/jatin82/skipstreams@07/userScript.js`
+- Hotstar: `https://cdn.jsdelivr.net/gh/jatin82/skipstreams@07/hotstar/userScript.js`
+
+For the matching pre-bridge widget, the existing local TizenBrew v2.0.5 Add Module build is
+`tv-app/dist/tizenbrew/module-button/signed/TizenBrew-ModuleButton.wgt` (signed with `Monitor32`).
+It retains the native exit behavior and does not need the newer return bridge.
+
+The custom rebuild can include **Check service** and **Restart service**, using the existing
+service-control implementation, with logging disabled. Service startup is manual: use
+**Restart service** to start/recover it, then **Check service** to confirm a response and
+reconnect the module client. These controls do not change the scripts' native exit behavior.
+
+This is a complete script rollback, including the older autoplay and artwork suppression.
+Package versions advance to `1.5.6` for Prime and `1.5.1` for Hotstar; existing release tags
+are unchanged. The behavior described below for releases `01` through `06` does not describe
+release `07`.
+
+### Behavior in releases 01 through 06
 
 When a module starts, it shows the same **Which movie?** list as the TV apps, loaded from the online
 JSON file. The modules start on the site's tiny `robots.txt` page, so no home page, images or scripts load
@@ -98,8 +127,8 @@ requests are not blanket-blocked: removing those would prevent real playback. DO
 suppression is not a guarantee that every image request is prevented before it starts.
 
 Release tags use two digits without a prefix or dots, starting at `01`. Both modules retain
-semantic package versions internally (`1.5.5` for Prime `06`, `1.5.0` for JioHotstar `01`) for compatibility.
-Use the release-tag names (`@06` for Prime, `@01/hotstar` for JioHotstar). A tag never changes, so jsDelivr can't serve a stale copy. To
+semantic package versions internally (`1.5.6` for Prime `07`, `1.5.1` for JioHotstar `07`) for compatibility.
+Use the release-tag names (`@07` for Prime, `@07/hotstar` for JioHotstar). A tag never changes, so jsDelivr can't serve a stale copy. To
 update, remove the module and add it again with the new tag. `@main` works too, but jsDelivr can keep
 an old copy for up to 12 hours, and purges are rate-limited. The plain `jatin82/skipstreams` address
 can stay stuck on an old version for a long time.

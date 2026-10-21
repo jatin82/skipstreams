@@ -3,8 +3,8 @@
  *
  * - Clicks "Skip ad" controls and fast-forwards (muted) unskippable ads.
  * - Remote-controlled virtual cursor: arrows move, OK clicks, edges scroll.
- * - Loads the complete Prime page before attempting Watch/Resume.
- * - Back opens the movie list; exiting the list returns to TizenBrew.
+ * - Disables page animations and trailer autoplay to keep the TV responsive.
+ * - Back key navigates back / closes player, media keys control playback.
  *
  * Ad logic ported from the "Prime Video Ads Auto-Skip" Tampermonkey script.
  */
@@ -24,23 +24,6 @@
 	var IS_PRIME = !/(^|\.)hotstar\.com$/i.test(location.hostname);
 	// The PC companion sets __ptTargetUrl before injecting; TizenBrew doesn't.
 	var WITH_COMPANION = window.__ptTargetUrl !== undefined;
-
-	function pagePath(url) {
-		var parsed = new URL(url, location.href);
-		return parsed.origin + parsed.pathname;
-	}
-
-	var traceId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
-	function trace(event, details) {
-		log('Trace', traceId, event, JSON.stringify(details || {}));
-	}
-	trace('document-start', { url: pagePath(location.href), referrer: document.referrer ? pagePath(document.referrer) : '',
-		ready: document.readyState, companion: WITH_COMPANION });
-	['pageshow', 'pagehide', 'beforeunload', 'popstate', 'hashchange'].forEach(function (name) {
-		window.addEventListener(name, function (event) {
-			trace(name, { url: pagePath(location.href), persisted: !!event.persisted });
-		});
-	});
 
 	function onReady(fn) {
 		if (document.body) fn();
@@ -99,8 +82,7 @@
 
 	function stripImages(root) {
 		if (!root || root.nodeType !== 1 || keepImages()) return;
-		var imgs = root.tagName === 'IMG' ? [root] : root.tagName === 'SOURCE' ?
-			(root.closest('picture') ? [root] : []) : root.querySelectorAll('img, picture source');
+		var imgs = root.tagName === 'IMG' || root.tagName === 'SOURCE' ? [root] : root.querySelectorAll('img, source');
 		for (var i = 0; i < imgs.length; i++) {
 			var img = imgs[i];
 			if (img.closest('[role="dialog"]')) continue;
@@ -142,10 +124,7 @@
 	var AutoPlay = (function () {
 		// Prime ships different detail-page layouts per region/account; the main CTA is the first match.
 		var PLAY_BUTTONS = [
-			'.dv-dp-node-playback a[data-testid="dp-atf-play-button"]',
-			'.dv-dp-node-playback a[data-automation-id="dp-atf-play-button"]',
 			'[data-testid="dp-atf-play-button"]',
-			'[data-automation-id="dp-atf-play-button"]',
 			'a.fbl-play-btn[href*="autoplay=1"]',
 			'[data-testid="play"][href*="autoplay=1"]',
 			'[data-automation-id="play"]',
@@ -157,13 +136,7 @@
 				var matches = document.querySelectorAll(PLAY_BUTTONS[i]);
 				for (var j = 0; j < matches.length; j++) {
 					var el = matches[j];
-					if (el.href) {
-						var target = new URL(el.href, location.href);
-						if (!/^https?:$/.test(target.protocol) ||
-							! /^(?:www\.)?primevideo\.com$/i.test(target.hostname) ||
-							/\/splash\//i.test(target.pathname)) continue;
-					}
-					if (isVisible(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true') return el;
+					if (el.offsetWidth && el.getAttribute('aria-disabled') !== 'true') return el;
 				}
 			}
 			return null;
@@ -198,37 +171,17 @@
 		return {
 			// The launcher opens the picked title's detail page with a full page load: press its Play button.
 			start: function () {
-				if (!IS_PRIME || !/\/(?:detail|dp)\//.test(location.pathname)) return;
+				if (!/\/detail\//.test(location.pathname)) return;
 				var startedAt = Date.now();
-				var lastClickAt = 0;
-				var lastState = '';
-				trace('autoplay-start', { url: pagePath(location.href) });
 				var poll = setInterval(function () {
-					if (Date.now() - startedAt > GIVE_UP_MS) {
-						log(lastClickAt ? 'Prime Watch/Resume clicks did not start playback within 30 seconds' :
-							'No enabled Prime Watch/Resume button appeared within 30 seconds');
-						return clearInterval(poll);
-					}
-					var video = getMainVideo();
-					var state = JSON.stringify({ player: playerIsOpen(), picker: PagePicker.isOpen(),
-						video: video ? { paused: video.paused, ready: video.readyState,
-							time: video.currentTime, inPlayer: !!video.closest('#dv-web-player') } : null });
-					if (state !== lastState) {
-						trace('autoplay-state', JSON.parse(state));
-						lastState = state;
-					}
-					if (video && video.closest('#dv-web-player') && !video.paused) return clearInterval(poll);
-					if (playerIsOpen() || PagePicker.isOpen()) return;
+					if (Date.now() - startedAt > GIVE_UP_MS) return clearInterval(poll);
 					var button = findPlayButton();
 					// No Play button after a while (e.g. "Sign in to watch"): sign in first.
 					if (!button && Date.now() - startedAt > SIGNIN_AFTER_MS && signInFirst()) return clearInterval(poll);
-					if (!button || Date.now() - lastClickAt < 3000) return;
-					lastClickAt = Date.now();
-					trace('autoplay-click', { url: pagePath(button.href || location.href),
-						disabled: button.getAttribute('aria-disabled'), elapsed: Date.now() - startedAt });
+					if (!button) return;
+					clearInterval(poll);
 					log('Playing', button.getAttribute('aria-label') || button.textContent.trim());
-					// The first click can arrive before Prime has attached its player handlers.
-					Pointer.fireClick(button);
+					button.click();
 				}, 300);
 			},
 		};
@@ -842,7 +795,6 @@
 	// "Show movie list"; fallback: walk history back to the launcher page. Without the companion
 	// (TizenBrew), the list is shown in the page itself.
 	function showMovieList() {
-		trace('show-movie-list', { url: pagePath(location.href), companion: WITH_COMPANION });
 		var video = getMainVideo();
 		if (video) video.pause();
 		if (!WITH_COMPANION) {
@@ -1023,8 +975,6 @@
 				handled = true;
 				break;
 			case KEY.BACK:
-				trace('back-key', { trusted: event.isTrusted, repeat: event.repeat,
-					target: event.target && event.target.tagName, url: pagePath(location.href) });
 				handleBack();
 				handled = true;
 				break;
@@ -1391,7 +1341,6 @@
 			'/public/download/tizenMoviesToPlay.json?parent=tizenMovie';
 		var LIST_KEY = IS_PRIME ? 'amazonPrime' : 'jioHotstar';
 		var root = null, items = [], urls = [], sel = 0;
-		var exitTimer = null;
 
 		// Show the list on the site's home/browse pages only, never on the picked movie, the player
 		// or sign-in/login steps. (TizenBrew reuses one window, so a per-session flag would hide it
@@ -1399,7 +1348,6 @@
 		function wanted() {
 			if (IS_PRIME) {
 				if (!/(^|\.)primevideo\.com$/i.test(location.hostname)) return false;
-				if (/\/splash\//i.test(location.pathname)) return false;
 				return !/\/(detail|dp|watch|auth|signin|ap)\b/i.test(location.pathname);
 			}
 			// A pending target from an unfinished login is honoured for 15 minutes, then the list shows again.
@@ -1422,27 +1370,7 @@
 		}
 
 		function exitApp() {
-			if (exitTimer !== null) return;
-			function failed(message) {
-				clearTimeout(exitTimer);
-				exitTimer = null;
-				log('Return to TizenBrew failed:', message);
-				if (root) render(message);
-			}
-			if (typeof window.__tizenBrewReturnToHome !== 'function') {
-				failed('Return to TizenBrew is unavailable. Update/start the TizenBrew service and try again.');
-				return;
-			}
-			render('Returning to TizenBrew...');
-			exitTimer = setTimeout(function () {
-				failed('Return to TizenBrew did not complete. The service may be disconnected; please try again.');
-			}, 5000);
-			try {
-				log('Returning to TizenBrew');
-				window.__tizenBrewReturnToHome('home');
-			} catch (error) {
-				failed('Could not return to TizenBrew: ' + String(error && error.message || error));
-			}
+			try { tizen.application.getCurrentApplication().exit(); } catch (e) { window.close(); }
 		}
 
 		function el(tag, css, text) {
@@ -1507,7 +1435,6 @@
 		function choose() {
 			var url = urls[sel];
 			if (!url) return exitApp();
-			trace('picker-choose', { index: sel, target: pagePath(url), from: pagePath(location.href) });
 			log('Picked', url);
 			// Hotstar: come back to this movie after login / profile selection.
 			if (!IS_PRIME) {
@@ -1526,7 +1453,6 @@
 		}
 
 		function open() {
-			trace('picker-open', { alreadyOpen: !!root, url: pagePath(location.href) });
 			if (root) return;
 			var mount = function () {
 				if (root) return;
@@ -1545,21 +1471,7 @@
 			isOpen: function () { return !!root; },
 			// First page of a TizenBrew launch: ask which movie before the site's home page loads.
 			startIfNeeded: function () {
-				if (IS_PRIME && /\/splash\/t\/getTheApp\b/i.test(location.pathname)) {
-					trace('prime-app-redirect', { url: pagePath(location.href) });
-					onReady(function () {
-						var notice = el('div', 'position:fixed;top:20px;left:20px;right:20px;padding:24px;' +
-							'z-index:2147483647;background:#511;color:#fff;font:24px sans-serif;',
-							'Prime redirected to Get the app instead of web playback. Update TizenBrew to the desktop-UA build, then reopen Prime. Back returns to the movie list.');
-						notice.id = 'prime-tizen-playback-error';
-						document.body.appendChild(notice);
-					});
-					return;
-				}
-				var show = !WITH_COMPANION && wanted();
-				trace('picker-start-decision', { show: show, companion: WITH_COMPANION, url: pagePath(location.href) });
-				if (!show) return;
-				trace('picker-stop-page-loading');
+				if (WITH_COMPANION || !wanted()) return;
 				try { window.stop(); } catch (e) { /* keep loading */ }
 				open();
 			},
@@ -1579,21 +1491,13 @@
 
 	registerKeys();
 	whenRoot(function () {
-		if (!IS_PRIME) disableAnimations();
-		if (!IS_PRIME) blockImages();
+		disableAnimations();
+		blockImages();
 		PagePicker.startIfNeeded();
 	});
 	if (IS_PRIME) {
-		if (document.readyState === 'complete') {
-			trace('page-loaded-before-autoplay');
-			AutoPlay.start();
-		} else {
-			trace('autoplay-waiting-for-page-load');
-			window.addEventListener('load', function () {
-				trace('page-loaded-before-autoplay');
-				AutoPlay.start();
-			}, { once: true });
-		}
+		blockTrailerAutoplay();
+		AutoPlay.start();
 	} else {
 		Hotstar.start();
 	}

@@ -51,7 +51,12 @@ function fixture(filename, options = {}) {
 		pagePath: url => new URL(url).origin + new URL(url).pathname,
 		setTimeout(fn, ms) { const id = timers.size + 1; timers.set(id, { fn, ms }); return id; },
 		clearTimeout(id) { timers.delete(id); },
-		tizen: { application: { getCurrentApplication: () => ({ exit() { calls.exit++; } }) } },
+		tizen: options.missingTizen ? undefined : { application: {
+			getCurrentApplication: () => ({ exit() {
+				if (options.exitFailure) throw new Error('Exit failed');
+				calls.exit++;
+			} }),
+		} },
 		XMLHttpRequest: class {
 			open() {}
 			send() {
@@ -84,43 +89,45 @@ test('Prime and Hotstar retain the same shared userscript implementation', () =>
 });
 
 for (const filename of scripts) {
-	test(filename + ': first Back shows the movie list; second Back requests TizenBrew', () => {
+	test(filename + ': first Back shows the movie list; second Back exits the app', () => {
 		const f = fixture(filename);
 		f.context.handleBack();
 		assert.equal(f.calls.pause, 1);
 		assert.equal(f.context.PagePicker.isOpen(), true);
 		assert.deepEqual(f.requests, []);
 		f.context.PagePicker.key(10009, false);
-		assert.deepEqual(f.requests, ['home']);
-		assert.equal(f.calls.exit, 0);
+		assert.deepEqual(f.requests, []);
+		assert.equal(f.calls.exit, 1);
 		assert.equal(f.calls.close, 0);
 	});
 
-	test(filename + ': Exit app uses the return bridge and suppresses duplicate exits', () => {
+	test(filename + ': Exit app uses the native Tizen application exit', () => {
 		const f = fixture(filename);
 		f.context.PagePicker.open();
 		f.context.PagePicker.key(40, false);
 		f.context.PagePicker.key(13, false);
-		f.context.PagePicker.key(10009, true);
-		assert.deepEqual(f.requests, ['home']);
-		assert.match(f.text(), /Returning to TizenBrew/);
-		assert.equal(f.calls.exit + f.calls.close, 0);
+		assert.deepEqual(f.requests, []);
+		assert.equal(f.calls.exit, 1);
+		assert.equal(f.calls.close, 0);
 	});
 
-	test(filename + ': missing, rejected and timed-out return requests never exit to Samsung Home', () => {
-		for (const options of [{ missingBridge: true }, { bridgeFailure: true }, {}]) {
+	test(filename + ': Back exits without the custom return bridge', () => {
+		const f = fixture(filename, { missingBridge: true });
+		f.context.PagePicker.open();
+		f.context.PagePicker.key(10009, false);
+		assert.equal(f.calls.exit, 1);
+		assert.equal(f.calls.close, 0);
+		assert.deepEqual(f.requests, []);
+	});
+
+	test(filename + ': unavailable or failing native exit falls back to closing the window', () => {
+		for (const options of [{ missingTizen: true }, { exitFailure: true }]) {
 			const f = fixture(filename, options);
 			f.context.PagePicker.open();
 			f.context.PagePicker.key(10009, false);
-			if (!options.missingBridge && !options.bridgeFailure) {
-				const timeout = [...f.timers.values()].find(timer => timer.ms === 5000);
-				assert.ok(timeout);
-				timeout.fn();
-			}
-			assert.equal(f.calls.exit + f.calls.close, 0);
-			assert.equal(f.context.PagePicker.isOpen(), true);
-			assert.match(f.text(), /unavailable|disconnected|did not complete/);
-			assert.ok(f.messages.some(message => message.includes('Return to TizenBrew failed')));
+			assert.equal(f.calls.exit, 0);
+			assert.equal(f.calls.close, 1);
+			assert.deepEqual(f.requests, []);
 			assert.equal(f.timers.size, 0);
 		}
 	});
